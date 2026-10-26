@@ -1,0 +1,8 @@
+{
+  "week": 7,
+  "trigger": "performance decay: recent AUC 0.8198 < best 0.8716 - 0.05",
+  "n_labeled": 4339,
+  "auc_on_recent_live": 0.8385688473383516,
+  "auc_on_static_reference": 0.8451238972961342,
+  "never_retrain_auc_reference": 0.8469662196084057
+}

@@ -1,0 +1,26 @@
+from kodeagent import CodeActAgent, print_response
+from kodeagent.tools import download_file
+
+
+agent = CodeActAgent(
+      name='Data Cleaning Agent',
+      model_name='gemini/gemini-3.8-flash',  # Swap via LiteLLM (e.g., 'openai/gpt-4.1')
+      tools=[download_file],
+      run_env='host',  # Use 'e2b' for sandboxed execution if preferred
+      allowed_imports=[
+          'numpy',
+          'matplotlib',
+          'pandas',
+          'csv',
+          'json',
+          're',
+          'pathlib',
+          'io',
+          'datetime',
+          'urllib',
+          'requests',
+          'tempfile',
+          'os',
+      ],
+      pip_packages='pandas',
+  )
