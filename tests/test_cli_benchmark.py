@@ -65,3 +65,38 @@ def test_cli_train_with_algorithm_and_balanced(tmp_path, capsys):
     assert "LGBMClassifier" in captured.out or "LightGBM" in captured.out
     assert (output_dir / "model.joblib").exists()
     assert (output_dir / "metadata.json").exists()
+
+
+def test_cli_train_with_tune(tmp_path, capsys):
+    data_dir = tmp_path / "data"
+    output_dir = tmp_path / "models"
+    data_dir.mkdir()
+
+    X_mat, y_vec = make_classification(
+        n_samples=40,
+        n_features=4,
+        n_informative=2,
+        weights=[0.7, 0.3],
+        random_state=42,
+    )
+    feature_cols = [f"f_{i}" for i in range(4)]
+    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
+    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
+
+    exit_code = main([
+        "train",
+        "--data-dir", str(data_dir),
+        "--output-dir", str(output_dir),
+        "--tune",
+        "--n-trials", "2",
+        "--cv-folds", "2",
+        "--tracking-uri", f"file://{tmp_path / 'mlruns'}",
+        "--experiment-name", "test_cli_tuning_exp",
+    ])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Bayesian Hyperparameter Optimization" in captured.out
+    assert "Winning Algorithm" in captured.out
+    assert (output_dir / "model.joblib").exists()
+    assert (output_dir / "metadata.json").exists()

@@ -9,6 +9,7 @@ from final_project.models import (
     ModelCVMetrics,
     benchmark_candidates,
 )
+from final_project.tuning import run_tuning_study, TuningResult
 
 __all__ = [
     "run_training",
@@ -22,4 +23,6 @@ __all__ = [
     "evaluate_model_cv",
     "ModelCVMetrics",
     "benchmark_candidates",
+    "run_tuning_study",
+    "TuningResult",
 ]
