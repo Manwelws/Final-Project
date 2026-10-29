@@ -5,13 +5,14 @@ from pathlib import Path
 import joblib
 
 from final_project.data import load_and_split_data
-from final_project.models import train_baseline_model
+from final_project.models import train_candidate_model, train_baseline_model
 
 
 @dataclass(frozen=True)
 class PipelineRunSummary:
     timestamp: str
     algorithm: str
+    balanced: bool
     cv_auc_mean: float
     cv_auc_std: float
     cv_fold_scores: list[float]
@@ -27,11 +28,13 @@ class PipelineRunSummary:
 def run_training(
     data_dir: Path | str = "data/processed",
     output_dir: Path | str = "models",
+    algorithm: str = "random_forest",
+    balanced: bool = False,
     test_size: float = 0.20,
     cv_folds: int = 5,
     random_state: int = 42,
 ) -> PipelineRunSummary:
-    """Orchestrate the full baseline training pipeline, persisting model and metadata."""
+    """Orchestrate training of candidate models, persisting model artifact and metadata."""
     data_path = Path(data_dir)
     features_path = data_path / "X_features.csv"
     target_path = data_path / "y_target.csv"
@@ -44,10 +47,12 @@ def run_training(
         random_state=random_state,
     )
 
-    # Step 2: Train baseline model with Stratified CV
-    result = train_baseline_model(
+    # Step 2: Train candidate model with Stratified CV
+    result = train_candidate_model(
         X_train=split.X_train,
         y_train=split.y_train,
+        algorithm=algorithm,
+        balanced=balanced,
         cv_folds=cv_folds,
         random_state=random_state,
     )
@@ -60,9 +65,12 @@ def run_training(
     model_file = out_path / "model.joblib"
     joblib.dump(result.model, model_file)
 
+    algo_name = result.model.__class__.__name__
+
     meta_dict = {
         "timestamp": timestamp,
-        "algorithm": "RandomForestClassifier",
+        "algorithm": algo_name,
+        "balanced": balanced,
         "cv_auc_mean": result.cv_auc_mean,
         "cv_auc_std": result.cv_auc_std,
         "cv_fold_scores": result.cv_fold_scores,
@@ -80,7 +88,8 @@ def run_training(
 
     return PipelineRunSummary(
         timestamp=timestamp,
-        algorithm="RandomForestClassifier",
+        algorithm=algo_name,
+        balanced=balanced,
         cv_auc_mean=result.cv_auc_mean,
         cv_auc_std=result.cv_auc_std,
         cv_fold_scores=result.cv_fold_scores,
