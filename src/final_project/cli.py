@@ -58,6 +58,29 @@ def build_parser() -> argparse.ArgumentParser:
         default=42,
         help="Random seed for reproducibility (default: 42)",
     )
+    train_parser.add_argument(
+        "--tune",
+        action="store_true",
+        help="Run Optuna Bayesian hyperparameter optimization study across candidates",
+    )
+    train_parser.add_argument(
+        "--n-trials",
+        type=int,
+        default=50,
+        help="Total Optuna tuning budget across candidates (default: 50)",
+    )
+    train_parser.add_argument(
+        "--experiment-name",
+        type=str,
+        default="churn_retraining_optimization",
+        help="MLflow experiment name for trial tracking (default: churn_retraining_optimization)",
+    )
+    train_parser.add_argument(
+        "--tracking-uri",
+        type=str,
+        default="file:./mlruns",
+        help="MLflow tracking URI (default: file:./mlruns)",
+    )
 
     # Benchmark subcommand
     bench_parser = subparsers.add_parser(
@@ -98,7 +121,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Starting training pipeline...")
         print(f"  Data directory: {args.data_dir}")
         print(f"  Output directory: {args.output_dir}")
-        print(f"  Algorithm: {args.algorithm} (balanced={args.balanced})")
+        if args.tune:
+            print(f"  Mode: Bayesian Hyperparameter Optimization (Optuna)")
+            print(f"  Tuning Budget: {args.n_trials} trials")
+            print(f"  MLflow Experiment: {args.experiment_name}")
+        else:
+            print(f"  Algorithm: {args.algorithm} (balanced={args.balanced})")
         print(f"  Stratified CV Folds: {args.cv_folds}")
 
         summary = run_training(
@@ -106,18 +134,22 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             algorithm=args.algorithm,
             balanced=args.balanced,
+            tune=args.tune,
+            n_trials=args.n_trials,
+            experiment_name=args.experiment_name,
+            tracking_uri=args.tracking_uri,
             test_size=args.test_size,
             cv_folds=args.cv_folds,
             random_state=args.random_state,
         )
 
         print(f"\nTraining completed successfully!")
-        print(f"  Algorithm: {summary.algorithm}")
+        print(f"  Winning Algorithm: {summary.algorithm}")
         print(f"  Balanced: {summary.balanced}")
         print(f"  Train samples: {summary.train_samples}")
         print(f"  Test samples: {summary.test_samples}")
         print(f"  Features: {summary.feature_count}")
-        print(f"  CV Mean ROC-AUC: {summary.cv_auc_mean:.4f} (+/- {summary.cv_auc_std:.4f})")
+        print(f"  CV Best/Mean ROC-AUC: {summary.cv_auc_mean:.4f} (+/- {summary.cv_auc_std:.4f})")
         print(f"  Fold Scores: {[round(s, 4) for s in summary.cv_fold_scores]}")
         print(f"  Model saved to: {summary.model_path}")
         print(f"  Metadata saved to: {summary.metadata_path}")
