@@ -2,7 +2,11 @@
   "week": 3,
   "trigger": "initial training",
   "n_labeled": 749,
-  "auc_on_recent_live": 0.8697884094225558,
-  "auc_on_static_reference": 0.8437029333715843,
-  "never_retrain_auc_reference": 0.8469662196084057
+  "psi_mean": 0.0019,
+  "psi_max": 0.0231,
+  "psi_status": "Stable",
+  "sample_decay_rate": 0.85,
+  "auc_on_recent_live": 1.0,
+  "auc_on_static_reference": 0.8302,
+  "never_retrain_auc_reference": 0.8355
 }

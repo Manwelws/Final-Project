@@ -1,7 +1,9 @@
-week,n_labeled,never_retrain_auc_reference,retrain_model_auc_recent,retrained
-3,749,0.8469662196084057,0.8697884094225558,True
-4,1647,0.8469662196084057,0.871618482188952,False
-5,2545,0.8469662196084057,0.871618482188952,False
-6,3442,0.8469662196084057,0.871618482188952,False
-7,4339,0.8469662196084057,0.8385688473383516,True
-8,5236,0.8469662196084057,0.8385688473383516,False
+week,n_labeled,psi_mean,psi_max,psi_status,never_retrain_auc_reference,retrain_model_auc_recent,retrained,trigger_reason
+1,0,0.0027,0.0275,Stable,,,False,awaiting label release
+2,0,0.0018,0.0156,Stable,,,False,awaiting label release
+3,749,0.0019,0.0231,Stable,0.8355,1.0,True,initial training
+4,1647,0.0022,0.0369,Stable,0.8355,1.0,False,monitoring
+5,2545,0.2288,4.3499,Significant Shift (Drift Detected),0.8355,1.0,True,performance decay: recent AUC 0.8630 < best 1.0000 - 0.05
+6,3442,0.228,4.3335,Significant Shift (Drift Detected),0.8355,1.0,False,monitoring
+7,4339,0.2286,4.3441,Significant Shift (Drift Detected),0.8355,1.0,True,performance decay: recent AUC 0.8377 < best 1.0000 - 0.05
+8,5236,0.2327,4.3607,Significant Shift (Drift Detected),0.8355,1.0,True,performance decay: recent AUC 0.9466 < best 1.0000 - 0.05

@@ -1,0 +1,12 @@
+{
+  "week": 8,
+  "trigger": "performance decay: recent AUC 0.9466 < best 1.0000 - 0.05",
+  "n_labeled": 5236,
+  "psi_mean": 0.2327,
+  "psi_max": 4.3607,
+  "psi_status": "Significant Shift (Drift Detected)",
+  "sample_decay_rate": 0.85,
+  "auc_on_recent_live": 1.0,
+  "auc_on_static_reference": 0.8426,
+  "never_retrain_auc_reference": 0.8355
+}

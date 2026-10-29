@@ -18,3 +18,4 @@ models/
 # MLflow Experiment Tracking
 mlruns/
 *.db
+*.joblib

@@ -1,8 +1,12 @@
 {
   "week": 7,
-  "trigger": "performance decay: recent AUC 0.8198 < best 0.8716 - 0.05",
+  "trigger": "performance decay: recent AUC 0.8377 < best 1.0000 - 0.05",
   "n_labeled": 4339,
-  "auc_on_recent_live": 0.8385688473383516,
-  "auc_on_static_reference": 0.8451238972961342,
-  "never_retrain_auc_reference": 0.8469662196084057
+  "psi_mean": 0.2286,
+  "psi_max": 4.3441,
+  "psi_status": "Significant Shift (Drift Detected)",
+  "sample_decay_rate": 0.85,
+  "auc_on_recent_live": 1.0,
+  "auc_on_static_reference": 0.8399,
+  "never_retrain_auc_reference": 0.8355
 }

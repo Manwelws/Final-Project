@@ -23,6 +23,11 @@ from final_project.explainability import (
     group_shap_by_parent_features,
     ExplanationResult,
 )
+from final_project.drift import (
+    calculate_psi,
+    compute_dataset_psi,
+    compute_exponential_sample_weights,
+)
 
 __all__ = [
     "run_training",
@@ -48,4 +53,7 @@ __all__ = [
     "run_explanation",
     "group_shap_by_parent_features",
     "ExplanationResult",
+    "calculate_psi",
+    "compute_dataset_psi",
+    "compute_exponential_sample_weights",
 ]
