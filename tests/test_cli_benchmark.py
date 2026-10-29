@@ -100,3 +100,48 @@ def test_cli_train_with_tune(tmp_path, capsys):
     assert "Winning Algorithm" in captured.out
     assert (output_dir / "model.joblib").exists()
     assert (output_dir / "metadata.json").exists()
+
+
+def test_cli_evaluate_command(tmp_path, capsys):
+    data_dir = tmp_path / "data"
+    output_dir = tmp_path / "models"
+    reports_dir = tmp_path / "reports"
+    data_dir.mkdir()
+    output_dir.mkdir()
+
+    X_mat, y_vec = make_classification(
+        n_samples=50,
+        n_features=4,
+        n_informative=2,
+        weights=[0.7, 0.3],
+        random_state=42,
+    )
+    feature_cols = [f"f_{i}" for i in range(4)]
+    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
+    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
+
+    # Train a baseline model
+    from sklearn.ensemble import RandomForestClassifier
+    import joblib
+    import json
+    clf = RandomForestClassifier(random_state=42)
+    clf.fit(X_mat, y_vec)
+    joblib.dump(clf, output_dir / "model.joblib")
+    with open(output_dir / "metadata.json", "w") as f:
+        json.dump({"algorithm": "RandomForestClassifier", "features": feature_cols}, f)
+
+    exit_code = main([
+        "evaluate",
+        "--data-dir", str(data_dir),
+        "--model-path", str(output_dir / "model.joblib"),
+        "--metadata-path", str(output_dir / "metadata.json"),
+        "--report-dir", str(reports_dir),
+        "--cost-fn", "200",
+        "--cost-fp", "20",
+    ])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Holdout Evaluation Completed Successfully" in captured.out
+    assert "Threshold Optimization Summary" in captured.out
+    assert (reports_dir / "evaluation_report.md").exists()

@@ -5,6 +5,7 @@ from pathlib import Path
 from final_project.data import load_and_split_data
 from final_project.models import benchmark_candidates
 from final_project.pipeline import run_training
+from final_project.evaluation import run_evaluation
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -106,6 +107,60 @@ def build_parser() -> argparse.ArgumentParser:
         help="Random seed for reproducibility (default: 42)",
     )
 
+    # Evaluate subcommand
+    eval_parser = subparsers.add_parser(
+        "evaluate",
+        help="Evaluate model on holdout test set and optimize decision threshold",
+    )
+    eval_parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="data/processed",
+        help="Directory containing X_features.csv and y_target.csv",
+    )
+    eval_parser.add_argument(
+        "--model-path",
+        type=str,
+        default="models/model.joblib",
+        help="Path to serialized model artifact",
+    )
+    eval_parser.add_argument(
+        "--metadata-path",
+        type=str,
+        default="models/metadata.json",
+        help="Path to model metadata JSON file to update",
+    )
+    eval_parser.add_argument(
+        "--report-dir",
+        type=str,
+        default="reports",
+        help="Directory to save markdown report and diagnostic figures",
+    )
+    eval_parser.add_argument(
+        "--cost-fn",
+        type=float,
+        default=200.0,
+        help="Financial loss of a false negative / missed churner (default: 200.0)",
+    )
+    eval_parser.add_argument(
+        "--cost-fp",
+        type=float,
+        default=20.0,
+        help="Cost of a false positive / retention incentive offer (default: 20.0)",
+    )
+    eval_parser.add_argument(
+        "--test-size",
+        type=float,
+        default=0.20,
+        help="Holdout test split proportion (default: 0.20)",
+    )
+    eval_parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+
     return parser
 
 
@@ -184,6 +239,39 @@ def main(argv: list[str] | None = None) -> int:
             pr_str = f"{row['pr_auc_mean']:.4f} ± {row['pr_auc_std']:.4f}"
             print(f"{i+1:<5} {row['model']:<15} {row['weighting']:<12} {roc_str:<20} {pr_str:<20}")
         print("=" * 72)
+        return 0
+
+    if args.subcommand == "evaluate":
+        print("Starting holdout evaluation and threshold optimization...")
+        print(f"  Model artifact: {args.model_path}")
+        print(f"  Data directory: {args.data_dir}")
+        print(f"  Cost Matrix: C_FN=${args.cost_fn:.0f}, C_FP=${args.cost_fp:.0f}")
+
+        summary = run_evaluation(
+            data_dir=args.data_dir,
+            model_path=args.model_path,
+            metadata_path=args.metadata_path,
+            report_dir=args.report_dir,
+            cost_fn=args.cost_fn,
+            cost_fp=args.cost_fp,
+            test_size=args.test_size,
+            random_state=args.random_state,
+        )
+
+        def_m = summary.default_metrics
+        opt_m = summary.cost_optimal_metrics
+
+        print(f"\nHoldout Evaluation Completed Successfully!")
+        print(f"  ROC-AUC: {summary.roc_auc:.4f}")
+        print(f"  PR-AUC:  {summary.pr_auc:.4f}")
+        print(f"  Brier Score: {summary.brier_score:.4f}")
+        print(f"\nThreshold Optimization Summary:")
+        print(f"  Default Cutoff (0.50):       Recall: {def_m.recall:.2%}, Loss: ${def_m.cost:,.0f}")
+        print(f"  Optimal Cutoff ({summary.optimal_threshold:.2f}):      Recall: {opt_m.recall:.2%}, Loss: ${opt_m.cost:,.0f}")
+        print(f"  Net Financial Savings:       ${summary.cost_savings:,.2f}")
+        print(f"\nArtifacts Created:")
+        print(f"  Markdown Report: {summary.report_path}")
+        print(f"  Diagnostic Plots ({len(summary.figures)}): {Path(args.report_dir) / 'figures'}")
         return 0
 
     print(f"Unknown subcommand: {args.subcommand}", file=sys.stderr)

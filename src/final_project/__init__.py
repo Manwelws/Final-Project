@@ -10,6 +10,14 @@ from final_project.models import (
     benchmark_candidates,
 )
 from final_project.tuning import run_tuning_study, TuningResult
+from final_project.evaluation import (
+    run_evaluation,
+    compute_metrics_at_threshold,
+    optimize_threshold,
+    ThresholdMetrics,
+    OptimizationResult,
+    EvaluationSummary,
+)
 
 __all__ = [
     "run_training",
@@ -25,4 +33,10 @@ __all__ = [
     "benchmark_candidates",
     "run_tuning_study",
     "TuningResult",
+    "run_evaluation",
+    "compute_metrics_at_threshold",
+    "optimize_threshold",
+    "ThresholdMetrics",
+    "OptimizationResult",
+    "EvaluationSummary",
 ]
