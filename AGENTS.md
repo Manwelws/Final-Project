@@ -1,7 +1,7 @@
 # AGENTS.md — Final Project (Churn Retraining Pipeline)
 
 ## Project
-uv-managed Python project (Python 3.14). Only deps: `pandas`, `numpy`, `matplotlib`, `openpyxl`. **No scikit-learn** — the simulator implements logistic regression + rank-based AUC from scratch in `notebooks/simulate_retraining.py`.
+uv-managed Python project (Python 3.14). Core dependencies: `pandas`, `numpy`, `matplotlib`, `openpyxl`, `scikit-learn`, `xgboost`, `lightgbm`, `optuna`, `mlflow`, `joblib`, `shap`. Per ADR 0001, Milestone 2 replaces the simulator's hand-rolled logistic regression with a production-trained model artifact.
 
 ## How to run
 ```
@@ -41,3 +41,17 @@ Retraining triggers at weeks 3 (initial) and 7 (performance decay: recent AUC 0.
 - No AGENTS.md/CLAUDE.md/CI/pre-commit existed before this file.
 - Paths in code are relative to project root (e.g. `data/processed/X_features.csv`).
 - All numeric cleaning decisions are documented inline in `simulate_retraining.py` (DECISION / ALTERNATIVES / WHY NOT PICKED blocks).
+
+## Agent skills
+
+### Issue tracker
+
+GitHub issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical roles mapped 1:1. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context (`GLOSSARY.md` + `docs/adr/`). See `docs/agents/domain.md`.
