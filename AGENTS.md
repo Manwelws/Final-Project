@@ -38,7 +38,7 @@ Retraining triggers at weeks 3 (initial) and 7 (performance decay: recent AUC 0.
 - `README.md` — empty
 
 ## Conventions
-- No AGENTS.md/CLAUDE.md/CI/pre-commit existed before this file.
+- **Never commit directly to master**: Always create a feature/ticket branch (e.g. `feat/issue-<n>`), commit to that branch, push, and open a Pull Request.
 - Paths in code are relative to project root (e.g. `data/processed/X_features.csv`).
 - All numeric cleaning decisions are documented inline in `simulate_retraining.py` (DECISION / ALTERNATIVES / WHY NOT PICKED blocks).
 
