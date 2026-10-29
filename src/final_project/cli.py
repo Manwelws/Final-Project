@@ -6,6 +6,7 @@ from final_project.data import load_and_split_data
 from final_project.models import benchmark_candidates
 from final_project.pipeline import run_training
 from final_project.evaluation import run_evaluation
+from final_project.explainability import run_explanation
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -161,6 +162,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Random seed for reproducibility (default: 42)",
     )
 
+    # Explain subcommand
+    explain_parser = subparsers.add_parser(
+        "explain",
+        help="Explain model predictions and feature importance with SHAP TreeExplainer",
+    )
+    explain_parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="data/processed",
+        help="Directory containing X_features.csv and y_target.csv",
+    )
+    explain_parser.add_argument(
+        "--model-path",
+        type=str,
+        default="models/model.joblib",
+        help="Path to serialized model artifact",
+    )
+    explain_parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="reports/figures",
+        help="Directory to save generated SHAP diagnostic plots",
+    )
+    explain_parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=150,
+        help="Maximum sample size to explain with SHAP (default: 150)",
+    )
+    explain_parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+
     return parser
 
 
@@ -272,6 +309,35 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nArtifacts Created:")
         print(f"  Markdown Report: {summary.report_path}")
         print(f"  Diagnostic Plots ({len(summary.figures)}): {Path(args.report_dir) / 'figures'}")
+        return 0
+
+    if args.subcommand == "explain":
+        print("Starting model explainability analysis (SHAP TreeExplainer)...")
+        print(f"  Model artifact: {args.model_path}")
+        print(f"  Data directory: {args.data_dir}")
+        print(f"  Output directory: {args.output_dir}")
+        print(f"  Sample size: {args.max_samples}")
+
+        result = run_explanation(
+            data_dir=args.data_dir,
+            model_path=args.model_path,
+            output_dir=args.output_dir,
+            max_samples=args.max_samples,
+            random_state=args.random_state,
+        )
+
+        print(f"\nModel Explainability Completed Successfully!")
+        print(f"  Samples explained: {result.samples_explained}")
+        print(f"\nTop Parent Feature Importances (Aggregated Mean |SHAP|):")
+        print("=" * 60)
+        print(f"{'Rank':<5} {'Parent Feature':<30} {'Mean |SHAP|':<15}")
+        print("-" * 60)
+        for i, row in result.grouped_importance.head(10).iterrows():
+            print(f"{i+1:<5} {row['parent_feature']:<30} {row['mean_abs_shap']:.4f}")
+        print("=" * 60)
+        print(f"\nGenerated Diagnostic Figures ({len(result.generated_figures)}):")
+        for fig in result.generated_figures:
+            print(f"  - {fig}")
         return 0
 
     print(f"Unknown subcommand: {args.subcommand}", file=sys.stderr)

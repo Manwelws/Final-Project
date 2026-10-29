@@ -1,5 +1,5 @@
 from final_project.pipeline import run_training, PipelineRunSummary
-from final_project.data import load_and_split_data, DataSplit
+from final_project.data import load_and_split_data, load_features_and_target, DataSplit
 from final_project.models import (
     train_baseline_model,
     TrainingResult,
@@ -18,11 +18,17 @@ from final_project.evaluation import (
     OptimizationResult,
     EvaluationSummary,
 )
+from final_project.explainability import (
+    run_explanation,
+    group_shap_by_parent_features,
+    ExplanationResult,
+)
 
 __all__ = [
     "run_training",
     "PipelineRunSummary",
     "load_and_split_data",
+    "load_features_and_target",
     "DataSplit",
     "train_baseline_model",
     "TrainingResult",
@@ -39,4 +45,7 @@ __all__ = [
     "ThresholdMetrics",
     "OptimizationResult",
     "EvaluationSummary",
+    "run_explanation",
+    "group_shap_by_parent_features",
+    "ExplanationResult",
 ]

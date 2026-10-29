@@ -12,6 +12,20 @@ class DataSplit:
     y_test: pd.Series
 
 
+def load_features_and_target(
+    data_dir: Path | str = "data/processed",
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Load features and target DataFrames without splitting."""
+    data_dir = Path(data_dir)
+    X = pd.read_csv(data_dir / "X_features.csv")
+    y_df = pd.read_csv(data_dir / "y_target.csv")
+    if "Churn Value" in y_df.columns:
+        y = y_df["Churn Value"]
+    else:
+        y = y_df.iloc[:, 0]
+    return X, y
+
+
 def load_and_split_data(
     features_path: Path | str,
     target_path: Path | str,
