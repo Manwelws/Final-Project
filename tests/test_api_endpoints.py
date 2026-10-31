@@ -81,3 +81,44 @@ def test_predict_invalid_payload_triggers_422(client):
     payload = {"Tenure Months": -10.0}
     response = client.post("/predict", json=payload)
     assert response.status_code == 422
+
+
+def test_explain_endpoint_raw_profile(client):
+    payload = {
+        "Contract": "Month-to-month",
+        "Internet Service": "Fiber optic",
+        "Tenure Months": 1.0,
+        "Monthly Charges": 95.0,
+        "Total Charges": 95.0,
+        "Payment Method": "Electronic check",
+    }
+    response = client.post("/explain", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert 0.0 <= data["churn_probability"] <= 1.0
+    assert "base_value" in data
+    assert isinstance(data["risk_drivers"], list)
+    assert isinstance(data["protective_factors"], list)
+
+    for driver in data["risk_drivers"]:
+        assert "parent_feature" in driver
+        assert driver["shap_impact"] > 0
+
+    for factor in data["protective_factors"]:
+        assert "parent_feature" in factor
+        assert factor["shap_impact"] < 0
+
+
+def test_explain_endpoint_feature_vector(client):
+    features = {col: 0.0 for col in MODEL_FEATURE_NAMES}
+    features["Monthly Charges"] = 90.0
+    features["Tenure Months"] = 2.0
+    features["Contract_Month-to-month"] = 1.0
+
+    payload = {"features": features}
+    response = client.post("/explain", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert 0.0 <= data["churn_probability"] <= 1.0
+    assert len(data["risk_drivers"]) + len(data["protective_factors"]) > 0
+
