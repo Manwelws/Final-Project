@@ -258,4 +258,38 @@ def test_retention_triage_components() -> None:
         assert "expected_impact" in r
 
 
+def test_experiment_hub_components() -> None:
+    """Verify MLflow runs loading, parameter scatter generator, and candidate box plots."""
+    from final_project.dashboard.state import load_mlflow_runs, generate_mock_mlflow_runs
+    from final_project.dashboard.pages.experiment_hub import (
+        generate_parameter_scatter,
+        generate_algorithm_comparison_box,
+    )
+
+    # 1. Runs loader & mock fallback
+    mock_df = generate_mock_mlflow_runs(n_trials=30)
+    assert len(mock_df) == 30
+    assert "metrics.cv_roc_auc" in mock_df.columns
+    assert "tags.algorithm" in mock_df.columns
+
+    runs_df = load_mlflow_runs()
+    assert not runs_df.empty
+    assert "metrics.cv_roc_auc" in runs_df.columns
+
+    # 2. Parameter Scatter Plot
+    fig_scatter = generate_parameter_scatter(runs_df, param_col="params.n_estimators")
+    assert len(fig_scatter.data) >= 1
+    assert "Hyperparameter Sensitivity" in fig_scatter.layout.title.text
+
+    # 3. Empty scatter fallback
+    fig_empty = generate_parameter_scatter(pd.DataFrame(), param_col="params.n_estimators")
+    assert "No trials available" in fig_empty.layout.title.text
+
+    # 4. Candidate Architecture Box Plot
+    fig_box = generate_algorithm_comparison_box(runs_df)
+    assert len(fig_box.data) >= 1
+    assert "Distribution" in fig_box.layout.title.text
+
+
+
 

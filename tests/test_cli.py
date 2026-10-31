@@ -38,3 +38,32 @@ def test_cli_help(capsys):
     with pytest.raises(SystemExit) as exc:
         main(["--help"])
     assert exc.value.code == 0
+
+
+def test_cli_dashboard_help(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["dashboard", "--help"])
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    assert "--port" in captured.out
+    assert "--host" in captured.out
+
+
+def test_cli_dashboard_launch_mock(monkeypatch):
+    import subprocess
+
+    called_cmds = []
+
+    def fake_call(cmd):
+        called_cmds.append(cmd)
+        return 0
+
+    monkeypatch.setattr(subprocess, "call", fake_call)
+    exit_code = main(["dashboard", "--port", "9000", "--host", "127.0.0.1", "--headless"])
+    assert exit_code == 0
+    assert len(called_cmds) == 1
+    assert "--server.port" in called_cmds[0]
+    assert "9000" in called_cmds[0]
+    assert "--server.address" in called_cmds[0]
+    assert "127.0.0.1" in called_cmds[0]
+
