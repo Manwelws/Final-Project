@@ -40,6 +40,15 @@ class ExplanationResult:
     samples_explained: int
 
 
+@dataclass(frozen=True)
+class CustomerExplanation:
+    churn_probability: float
+    base_value: float
+    risk_drivers: list[tuple[str, float]]  # Parent features pushing toward churn (+)
+    protective_factors: list[tuple[str, float]]  # Parent features protecting against churn (-)
+    raw_shap_values: dict[str, float]
+
+
 def group_shap_by_parent_features(
     shap_values: np.ndarray,
     feature_names: list[str],
@@ -249,3 +258,107 @@ def run_explanation(
         generated_figures=generated_figures,
         samples_explained=len(X_sample),
     )
+
+
+def explain_customer_instance(
+    model: Any,
+    customer_features: pd.DataFrame | pd.Series | np.ndarray,
+    feature_names: list[str] | None = None,
+) -> CustomerExplanation:
+    """Compute local TreeExplainer attribution with signed parent feature aggregation for a single customer."""
+    # Normalize customer_features into 1-row DataFrame
+    if isinstance(customer_features, pd.DataFrame):
+        if len(customer_features) != 1:
+            raise ValueError(f"Expected single customer row in customer_features, got {len(customer_features)} rows")
+        df = customer_features.copy()
+        if feature_names is None:
+            feature_names = list(df.columns)
+        else:
+            df = df[feature_names]
+    elif isinstance(customer_features, pd.Series):
+        if feature_names is None:
+            feature_names = list(customer_features.index)
+        df = pd.DataFrame([customer_features.values], columns=feature_names)
+    elif isinstance(customer_features, np.ndarray):
+        arr = customer_features
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+        elif arr.shape[0] != 1:
+            raise ValueError(f"Expected single customer row in numpy array, got shape {arr.shape}")
+        if feature_names is None:
+            feature_names = [f"feature_{i}" for i in range(arr.shape[1])]
+        df = pd.DataFrame(arr, columns=feature_names)
+    else:
+        raise TypeError(f"Unsupported customer_features type: {type(customer_features)}")
+
+    estimator = extract_tree_estimator(model)
+
+    # Compute probability prediction
+    if hasattr(model, "predict_proba"):
+        churn_prob = float(model.predict_proba(df)[:, 1][0])
+    elif hasattr(estimator, "predict_proba"):
+        churn_prob = float(estimator.predict_proba(df.to_numpy())[:, 1][0])
+    else:
+        churn_prob = 0.0
+
+    explainer = shap.TreeExplainer(estimator)
+    explanation = explainer(df)
+
+    # Extract single instance values and base_value for positive churn class
+    if explanation.values.ndim == 3:
+        shap_vals = explanation.values[0, :, 1]
+        base_val = (
+            float(explanation.base_values[0, 1])
+            if hasattr(explanation.base_values, "ndim") and explanation.base_values.ndim > 1
+            else float(explanation.base_values[0])
+        )
+    else:
+        shap_vals = explanation.values[0, :]
+        base_val = (
+            float(explanation.base_values[0])
+            if hasattr(explanation.base_values, "__len__")
+            else float(explanation.base_values)
+        )
+
+    raw_shap_values = {
+        feat: float(shap_vals[i]) for i, feat in enumerate(feature_names)
+    }
+
+    # Map features to parents
+    parent_map: dict[str, list[int]] = {}
+    for idx, col in enumerate(feature_names):
+        parent: str | None = None
+        for kp in KNOWN_PARENTS:
+            if col == kp or col.startswith(f"{kp}_"):
+                parent = kp
+                break
+        if parent is None:
+            if "_" in col:
+                parent = col.split("_")[0]
+            else:
+                parent = col
+        parent_map.setdefault(parent, []).append(idx)
+
+    risk_drivers: list[tuple[str, float]] = []
+    protective_factors: list[tuple[str, float]] = []
+
+    for parent, indices in parent_map.items():
+        net_signed_shap = float(np.sum(shap_vals[indices]))
+        if net_signed_shap > 0:
+            risk_drivers.append((parent, round(net_signed_shap, 4)))
+        elif net_signed_shap < 0:
+            protective_factors.append((parent, round(net_signed_shap, 4)))
+
+    # Sort risk drivers descending (highest positive push towards churn first)
+    risk_drivers.sort(key=lambda x: x[1], reverse=True)
+    # Sort protective factors ascending (most negative push away from churn first)
+    protective_factors.sort(key=lambda x: x[1])
+
+    return CustomerExplanation(
+        churn_probability=churn_prob,
+        base_value=base_val,
+        risk_drivers=risk_drivers,
+        protective_factors=protective_factors,
+        raw_shap_values=raw_shap_values,
+    )
+

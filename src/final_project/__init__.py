@@ -21,12 +21,35 @@ from final_project.evaluation import (
 from final_project.explainability import (
     run_explanation,
     group_shap_by_parent_features,
+    explain_customer_instance,
     ExplanationResult,
+    CustomerExplanation,
 )
 from final_project.drift import (
     calculate_psi,
     compute_dataset_psi,
     compute_exponential_sample_weights,
+)
+from final_project.domain import (
+    CostMatrix,
+    DriftPolicy,
+    RetrainingPolicy,
+)
+from final_project.registry import (
+    ModelMetadata,
+    ModelBundle,
+    RiskPrediction,
+)
+from final_project.reporting import (
+    render_evaluation_plots,
+    generate_evaluation_report,
+)
+from final_project.simulation import (
+    SimulationConfig,
+    SimulationRunner,
+    SimulationRunResults,
+    DualDriftMonitor,
+    StreamingBatchEngine,
 )
 
 __all__ = [
@@ -52,8 +75,23 @@ __all__ = [
     "EvaluationSummary",
     "run_explanation",
     "group_shap_by_parent_features",
+    "explain_customer_instance",
     "ExplanationResult",
+    "CustomerExplanation",
     "calculate_psi",
     "compute_dataset_psi",
     "compute_exponential_sample_weights",
+    "CostMatrix",
+    "DriftPolicy",
+    "RetrainingPolicy",
+    "ModelMetadata",
+    "ModelBundle",
+    "RiskPrediction",
+    "render_evaluation_plots",
+    "generate_evaluation_report",
+    "SimulationConfig",
+    "SimulationRunner",
+    "SimulationRunResults",
+    "DualDriftMonitor",
+    "StreamingBatchEngine",
 ]
