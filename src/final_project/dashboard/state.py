@@ -193,9 +193,6 @@ def calculate_confusion_at_cutoff(
         cost_fp=cost_matrix.cost_fp,
     )
 
-    total_negatives = m.tn + m.fp
-    fpr = m.fp / total_negatives if total_negatives > 0 else 0.0
-
     return {
         "cutoff": cutoff,
         "tp": m.tp,
@@ -204,7 +201,7 @@ def calculate_confusion_at_cutoff(
         "fn": m.fn,
         "recall": m.recall,
         "precision": m.precision,
-        "fpr": fpr,
+        "fpr": m.fpr,
         "f1": m.f1,
         "total_cost": m.cost,
     }

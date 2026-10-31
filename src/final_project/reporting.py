@@ -14,15 +14,38 @@ from sklearn.calibration import calibration_curve
 
 
 def render_evaluation_plots(
-    y_true: np.ndarray,
-    y_probs: np.ndarray,
-    opt_result: Any,
-    roc_auc: float,
-    pr_auc: float,
-    brier_score: float,
-    figures_dir: Path | str,
+    y_true: np.ndarray | Any = None,
+    y_probs: np.ndarray | None = None,
+    opt_result: Any = None,
+    roc_auc: float | None = None,
+    pr_auc: float | None = None,
+    brier_score: float | None = None,
+    figures_dir: Path | str | None = None,
+    *,
+    report: Any = None,
 ) -> list[str]:
-    """Generate and save publication-quality diagnostic plots."""
+    """Generate and save publication-quality diagnostic plots.
+
+    Accepts either an EvaluationReport directly (via report or first argument),
+    or individual metric parameters for backwards compatibility.
+    """
+    # Check if first arg is an EvaluationReport
+    if report is None and hasattr(y_true, "optimization") and hasattr(y_true, "roc_auc"):
+        report = y_true
+        if figures_dir is None and y_probs is not None:
+            figures_dir = y_probs
+
+    if report is not None:
+        y_true = report.y_true
+        y_probs = report.y_probs
+        opt_result = report.optimization
+        roc_auc = report.roc_auc
+        pr_auc = report.pr_auc
+        brier_score = report.brier_score
+
+    if figures_dir is None:
+        raise ValueError("figures_dir must be specified")
+
     out_dir = Path(figures_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     plot_files = []
@@ -127,11 +150,34 @@ def render_evaluation_plots(
 
 
 def generate_evaluation_report(
-    summary_data: dict[str, Any],
-    opt_result: Any,
-    report_file: Path | str,
+    summary_data: dict[str, Any] | Any = None,
+    opt_result: Any = None,
+    report_file: Path | str | None = None,
+    *,
+    report: Any = None,
 ) -> None:
-    """Generate executive markdown evaluation report with formatted comparison tables."""
+    """Generate executive markdown evaluation report with formatted comparison tables.
+
+    Accepts either an EvaluationReport directly (via report or first argument),
+    or summary_data dict + opt_result for backwards compatibility.
+    """
+    if report is None and hasattr(summary_data, "optimization") and hasattr(summary_data, "roc_auc"):
+        report = summary_data
+        if report_file is None and opt_result is not None:
+            report_file = opt_result
+
+    if report is not None:
+        opt_result = report.optimization
+        summary_data = {
+            "test_samples": len(report.y_true),
+            "roc_auc": report.roc_auc,
+            "pr_auc": report.pr_auc,
+            "brier_score": report.brier_score,
+        }
+
+    if report_file is None:
+        raise ValueError("report_file must be specified")
+
     def_m = opt_result.default_metrics
     f1_m = opt_result.f1_optimal_metrics
     cost_m = opt_result.cost_optimal_metrics

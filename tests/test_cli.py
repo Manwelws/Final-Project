@@ -67,3 +67,33 @@ def test_cli_dashboard_launch_mock(monkeypatch):
     assert "--server.address" in called_cmds[0]
     assert "127.0.0.1" in called_cmds[0]
 
+
+def test_cli_simulate_help(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["simulate", "--help"])
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    assert "--n-weeks" in captured.out
+    assert "--no-save" in captured.out
+
+
+def test_cli_simulate_command_mock(monkeypatch, capsys):
+    from final_project import cli
+    import pandas as pd
+
+    class FakeResults:
+        drift_metrics = pd.DataFrame([{"week": 1}])
+        retrained_weeks = [3, 7]
+        final_retrain_auc_recent = 0.88
+
+    def fake_run_simulation(*args, **kwargs):
+        return FakeResults()
+
+    monkeypatch.setattr(cli, "run_simulation", fake_run_simulation)
+    exit_code = main(["simulate", "--n-weeks", "4", "--no-save"])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Starting weekly streaming simulation (4 weeks)" in captured.out
+    assert "Simulation Completed Successfully" in captured.out
+
+

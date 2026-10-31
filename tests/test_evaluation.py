@@ -13,6 +13,7 @@ from final_project.evaluation import (
     run_evaluation,
     ThresholdMetrics,
     EvaluationSummary,
+    EvaluationReport,
 )
 
 
@@ -114,3 +115,49 @@ def test_run_evaluation_mock_creates_report_and_plots(tmp_path):
         updated_meta = json.load(f)
     assert "optimal_threshold" in updated_meta
     assert "cost_savings" in updated_meta
+
+
+def test_threshold_metrics_fpr():
+    metrics = compute_metrics_at_threshold(
+        y_true=np.array([0, 0, 1, 1]),
+        y_probs=np.array([0.8, 0.2, 0.9, 0.1]),
+        threshold=0.5,
+    )
+    # y_pred = [1, 0, 1, 0] -> TP=1, FP=1, TN=1, FN=1
+    # total negatives = TN + FP = 2 -> FPR = 1/2 = 0.5
+    assert metrics.tp == 1
+    assert metrics.fp == 1
+    assert metrics.tn == 1
+    assert metrics.fn == 1
+    assert metrics.fpr == 0.5
+
+
+def test_evaluation_report_in_process_and_rendering(tmp_path):
+    y_true = np.array([0, 0, 0, 1, 1, 1, 0, 1])
+    y_probs = np.array([0.1, 0.2, 0.3, 0.7, 0.8, 0.9, 0.4, 0.6])
+
+    # 1. Pure in-process computation: zero disk writes
+    report = EvaluationReport.compute(y_true=y_true, y_probs=y_probs)
+    assert isinstance(report, EvaluationReport)
+    assert report.roc_auc > 0.9
+    assert report.pr_auc > 0.8
+    assert 0.0 <= report.brier_score <= 1.0
+    assert report.optimization.cost_optimal_threshold <= 0.6
+
+    # 2. Metadata dictionary serialization
+    meta_dict = report.to_metadata_dict()
+    assert "optimal_threshold" in meta_dict
+    assert "cost_savings" in meta_dict
+    assert "threshold_comparison" in meta_dict
+
+    # 3. Artifact rendering through report methods
+    fig_dir = tmp_path / "figures"
+    plots = report.render_plots(fig_dir)
+    assert len(plots) == 5
+    for p in plots:
+        assert Path(p).exists()
+
+    report_path = tmp_path / "report.md"
+    report.write_markdown(report_path)
+    assert report_path.exists()
+    assert "Holdout Evaluation Report" in report_path.read_text()

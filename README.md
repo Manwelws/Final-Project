@@ -642,7 +642,10 @@ uv run churn evaluate --cost-fn 200 --cost-fp 20 --report-dir reports
 # 4. Generate SHAP explainability plots and importance rankings
 uv run churn explain --max-samples 150 --output-dir reports/figures
 
-# 5. Launch interactive Streamlit Operations Dashboard
+# 5. Run weekly streaming retraining & drift simulation
+uv run churn simulate --n-weeks 8
+
+# 6. Launch interactive Streamlit Operations Dashboard
 uv run churn dashboard --port 8501 --host 0.0.0.0
 ```
 

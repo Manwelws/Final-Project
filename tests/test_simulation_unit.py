@@ -5,6 +5,8 @@ from final_project.simulation import (
     SimulationConfig,
     DualDriftMonitor,
     StreamingBatchEngine,
+    SimulationRunner,
+    run_simulation,
 )
 
 
@@ -55,3 +57,23 @@ def test_streaming_batch_engine_drift_injection():
     # Week 1 (index 0) is before drift start (drift_start_week=2)
     # Week 2 (index 1) has drift injected
     assert len(batches) == 3
+
+
+def test_simulation_runner_dependency_injection():
+    cfg = SimulationConfig(n_weeks=2)
+    custom_monitor = DualDriftMonitor(auc_drop_threshold=0.10)
+    custom_engine = StreamingBatchEngine(cfg)
+
+    runner = SimulationRunner(
+        config=cfg,
+        monitor=custom_monitor,
+        engine=custom_engine,
+        save_artifacts=False,
+        verbose=False,
+    )
+
+    assert runner.monitor is custom_monitor
+    assert runner.engine is custom_engine
+    assert runner.save_artifacts is False
+    assert runner.verbose is False
+
