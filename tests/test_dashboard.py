@@ -162,3 +162,38 @@ def test_diagnostic_curve_generators() -> None:
     assert len(fig_calib.data) == 2
     assert "Calibration" in fig_calib.layout.title.text
 
+
+def test_drift_monitor_components() -> None:
+    """Verify drift timeline, PSI heatmap, and sample decay figure generators."""
+    from final_project.dashboard.state import load_drift_metrics, load_feature_psi_matrix
+    from final_project.dashboard.pages.drift_monitor import (
+        generate_drift_timeline_chart,
+        generate_psi_heatmap,
+        generate_sample_decay_curve,
+    )
+
+    # 1. Timeline chart
+    drift_df = load_drift_metrics("data/drift/drift_metrics.csv")
+    assert not drift_df.empty
+    assert len(drift_df) == 8
+
+    fig_timeline = generate_drift_timeline_chart(drift_df)
+    assert len(fig_timeline.data) >= 3
+    assert "Streaming Retraining Timeline" in fig_timeline.layout.title.text
+
+    # 2. Feature PSI Matrix & Heatmap
+    psi_matrix = load_feature_psi_matrix("data/reference/X_reference.csv", "data/live/features")
+    assert not psi_matrix.empty
+    assert psi_matrix.shape[1] == 8  # 8 weeks
+    assert "Monthly Charges" in psi_matrix.index
+
+    fig_heatmap = generate_psi_heatmap(psi_matrix)
+    assert len(fig_heatmap.data) == 1
+    assert fig_heatmap.data[0].type == "heatmap"
+
+    # 3. Sample Decay curve
+    fig_decay = generate_sample_decay_curve(decay_rate=0.85, n_weeks=8)
+    assert len(fig_decay.data) == 1
+    assert "Sample Decay" in fig_decay.layout.title.text
+
+
