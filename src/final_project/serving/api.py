@@ -8,17 +8,21 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from final_project.registry import ModelBundle
+from final_project.explainability import explain_customer_instance
 from final_project.serving.schemas import (
     CustomerPredictionRequest,
     SinglePredictionResponse,
     BatchPredictionRequest,
     BatchPredictionResponse,
     BatchPredictionItem,
+    CustomerExplainResponse,
+    DriverContribution,
     HealthResponse,
 )
 from final_project.serving.adapter import (
     resolve_to_dataframe,
     encode_batch_profiles,
+    MODEL_FEATURE_NAMES,
 )
 
 MODELS_DIR = Path(os.environ.get("CHURN_MODELS_DIR", "models"))
@@ -162,3 +166,63 @@ def predict_churn_batch(request: BatchPredictionRequest) -> BatchPredictionRespo
         threshold_applied=float(risk_pred.threshold_applied),
         model_algorithm=bundle.metadata.algorithm or bundle.model.__class__.__name__,
     )
+
+
+@app.post(
+    "/explain",
+    response_model=CustomerExplainResponse,
+    tags=["Explainability"],
+    summary="Real-time SHAP explanation for frontline customer triage",
+)
+def explain_customer(request: CustomerPredictionRequest) -> CustomerExplainResponse:
+    """Compute local TreeExplainer Shapley values and signed parent feature attributions for a customer.
+
+    Returns:
+        * churn_probability: Model predicted risk probability.
+        * base_value: Expected value baseline.
+        * risk_drivers: Factors increasing churn probability (+) sorted by magnitude.
+        * protective_factors: Factors protecting against churn (-) sorted by magnitude.
+        * top_risk_driver & top_protective_factor: Primary drivers for retention outreach.
+    """
+    bundle = get_model_bundle()
+    try:
+        df = resolve_to_dataframe(request)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Failed to resolve customer input to feature vector: {exc}",
+        )
+
+    try:
+        explanation = explain_customer_instance(
+            model=bundle.model,
+            customer_features=df,
+            feature_names=MODEL_FEATURE_NAMES,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error computing SHAP explanation: {exc}",
+        )
+
+    risk_drivers = [
+        DriverContribution(parent_feature=p, shap_impact=val)
+        for p, val in explanation.risk_drivers
+    ]
+    protective_factors = [
+        DriverContribution(parent_feature=p, shap_impact=val)
+        for p, val in explanation.protective_factors
+    ]
+
+    top_risk = risk_drivers[0].parent_feature if risk_drivers else None
+    top_prot = protective_factors[0].parent_feature if protective_factors else None
+
+    return CustomerExplainResponse(
+        churn_probability=round(explanation.churn_probability, 4),
+        base_value=round(explanation.base_value, 4),
+        risk_drivers=risk_drivers,
+        protective_factors=protective_factors,
+        top_risk_driver=top_risk,
+        top_protective_factor=top_prot,
+    )
+
