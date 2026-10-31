@@ -239,7 +239,7 @@ sequenceDiagram
     actor DS as Data Scientist / CLI
     participant DL as DataLoader (final_project.data)
     participant TP as TrainPipeline (final_project.pipeline)
-    participant OPT as Optuna Tuner (final_project.tuning)
+    participant TUNER as Optuna Tuner (final_project.tuning)
     participant MLF as MLflow Store (./mlruns)
     participant EV as Evaluator (final_project.evaluation)
     participant REG as ModelRegistry (final_project.registry)
@@ -253,23 +253,23 @@ sequenceDiagram
         Note over DS,MLF: Strategy A: SMOTE Oversampling Benchmark (Evaluated & Excluded)
         DS->>TP: 3. benchmark_smote_baseline(X_train, y_train)
         TP->>MLF: 4. log_metrics(smote_runs, cv_auc=0.835)
-        Note over TP,MLF: Distorts categorical binary distributions; discarded for production
+        Note over TP,MLF: Distorts categorical binary distributions - discarded for production
     end
 
     rect rgb(6, 78, 59)
         Note over DS,REG: Strategy B: Native Class Weights + Optuna Bayesian Optimization [PRODUCTION]
-        DS->>OPT: 5. run_optuna_study(n_trials=50, candidates=[RF, LGBM, XGB])
+        DS->>TUNER: 5. run_optuna_study(n_trials=50, candidates=[RF, LGBM, XGB])
         loop 50 Bayesian Trials
-            OPT->>OPT: sample hyperparameters (TPESampler)
-            OPT->>MLF: log_params(trial_params), log_metrics(fold_auc)
+            TUNER->>TUNER: sample hyperparameters (TPESampler)
+            TUNER->>MLF: log_params(trial_params), log_metrics(fold_auc)
             opt Intermediate validation below threshold
-                OPT->>OPT: prune trial early (MedianPruner)
-                OPT->>MLF: set_tag("status", "PRUNED")
+                TUNER->>TUNER: prune trial early (MedianPruner)
+                TUNER->>MLF: set_tag("status", "PRUNED")
             end
         end
-        OPT-->>DS: Best trial: LightGBM (CV ROC-AUC: 0.8528 ± 0.0104)
+        TUNER-->>DS: Best trial: LightGBM (CV ROC-AUC: 0.8528 ± 0.0104)
         DS->>EV: 6. evaluate_model(best_model, X_test, y_test, cost_fn=200, cost_fp=20)
-        EV-->>DS: Optimal Cutoff = 0.12 (Loss: $14,880 vs $36,740; Net Savings: $21,860)
+        EV-->>DS: Optimal Cutoff = 0.12 (Loss: $14,880 vs $36,740 - Net Savings: $21,860)
         DS->>REG: 7. ModelBundle.save("models", model, metadata)
         DS->>EV: 8. generate_evaluation_report() & generate_shap_plots()
         EV-->>DS: Markdown report & diagnostic figures saved to reports/
