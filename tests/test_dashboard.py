@@ -105,3 +105,60 @@ def test_compute_holdout_financial_impact() -> None:
     assert impact["pct_reduction"] > 50.0  # Around 59.5%
     assert impact["captured_delta"] > 100  # Captures substantially more churners
     assert impact["optimal"]["recall"] > 0.90  # Recall around 93%
+
+
+def test_candidate_benchmarks_table() -> None:
+    """Verify candidate benchmark summary dataframe."""
+    from final_project.dashboard.pages.model_diagnostics import get_candidate_benchmarks
+
+    df = get_candidate_benchmarks()
+    assert isinstance(df, pd.DataFrame)
+    assert len(df) == 6
+    assert "Model" in df.columns
+    assert "CV ROC-AUC" in df.columns
+    assert "LightGBM" in df["Model"].values
+    assert "Random Forest" in df["Model"].values
+    assert "XGBoost" in df["Model"].values
+
+
+def test_diagnostic_curve_generators() -> None:
+    """Verify Plotly figure generation for ROC, PR, Cost curve, Confusion Matrix, and Calibration."""
+    from final_project.dashboard.pages.model_diagnostics import (
+        generate_roc_curve,
+        generate_pr_curve,
+        generate_cost_curve,
+        generate_confusion_matrix_heatmap,
+        generate_calibration_curve,
+    )
+
+    y_true = np.array([0, 0, 1, 1, 0, 1, 0, 1])
+    y_prob = np.array([0.1, 0.2, 0.8, 0.9, 0.3, 0.7, 0.4, 0.85])
+
+    # 1. ROC
+    fig_roc = generate_roc_curve(y_true, y_prob)
+    assert len(fig_roc.data) == 2
+    assert "ROC" in fig_roc.layout.title.text
+
+    # 2. PR
+    fig_pr = generate_pr_curve(y_true, y_prob, optimal_cutoff=0.12)
+    assert len(fig_pr.data) >= 2
+    assert "Precision-Recall" in fig_pr.layout.title.text
+
+    # 3. Cost
+    fig_cost = generate_cost_curve(y_true, y_prob, cost_fn=200.0, cost_fp=20.0, optimal_cutoff=0.12)
+    assert len(fig_cost.data) == 3
+    assert "Cost" in fig_cost.layout.title.text
+
+    # 4. Confusion Matrix Heatmap
+    fig_cm = generate_confusion_matrix_heatmap(tp=348, fp=485, tn=550, fn=26, normalize=False)
+    assert len(fig_cm.data) == 1
+    assert fig_cm.data[0].type == "heatmap"
+
+    fig_cm_norm = generate_confusion_matrix_heatmap(tp=348, fp=485, tn=550, fn=26, normalize=True)
+    assert len(fig_cm_norm.data) == 1
+
+    # 5. Calibration
+    fig_calib = generate_calibration_curve(y_true, y_prob, n_bins=5)
+    assert len(fig_calib.data) == 2
+    assert "Calibration" in fig_calib.layout.title.text
+
