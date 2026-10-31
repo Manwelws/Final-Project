@@ -7,6 +7,7 @@ import joblib
 from final_project.data import load_and_split_data
 from final_project.models import train_candidate_model, train_baseline_model
 from final_project.tuning import run_tuning_study
+from final_project.registry import ModelMetadata
 
 
 @dataclass(frozen=True)
@@ -79,24 +80,24 @@ def run_training(
 
         joblib.dump(final_model, model_file)
 
-        meta_dict = {
-            "timestamp": timestamp,
-            "algorithm": algo_name,
-            "balanced": is_balanced,
-            "tuning_enabled": True,
-            "n_trials": n_trials,
-            "best_params": tuning_res.best_params,
-            "cv_auc_mean": cv_auc_mean,
-            "cv_auc_std": cv_auc_std,
-            "cv_fold_scores": cv_fold_scores,
-            "mlflow_experiment_id": tuning_res.experiment_id,
-            "train_samples": len(split.X_train),
-            "test_samples": len(split.X_test),
-            "feature_count": len(feature_names),
-            "features": feature_names,
-            "random_state": random_state,
-            "model_artifact": str(model_file.name),
-        }
+        metadata = ModelMetadata(
+            timestamp=timestamp,
+            algorithm=algo_name,
+            balanced=is_balanced,
+            tuning_enabled=True,
+            n_trials=n_trials,
+            best_params=tuning_res.best_params,
+            cv_auc_mean=cv_auc_mean,
+            cv_auc_std=cv_auc_std,
+            cv_fold_scores=cv_fold_scores,
+            mlflow_experiment_id=tuning_res.experiment_id,
+            train_samples=len(split.X_train),
+            test_samples=len(split.X_test),
+            feature_count=len(feature_names),
+            features=feature_names,
+            random_state=random_state,
+            model_artifact=str(model_file.name),
+        )
 
     else:
         # Step 2b: Standard Candidate Training with Stratified CV
@@ -118,25 +119,24 @@ def run_training(
 
         joblib.dump(final_model, model_file)
 
-        meta_dict = {
-            "timestamp": timestamp,
-            "algorithm": algo_name,
-            "balanced": is_balanced,
-            "tuning_enabled": False,
-            "cv_auc_mean": cv_auc_mean,
-            "cv_auc_std": cv_auc_std,
-            "cv_fold_scores": cv_fold_scores,
-            "train_samples": len(split.X_train),
-            "test_samples": len(split.X_test),
-            "feature_count": len(feature_names),
-            "features": feature_names,
-            "random_state": random_state,
-            "model_artifact": str(model_file.name),
-        }
+        metadata = ModelMetadata(
+            timestamp=timestamp,
+            algorithm=algo_name,
+            balanced=is_balanced,
+            tuning_enabled=False,
+            cv_auc_mean=cv_auc_mean,
+            cv_auc_std=cv_auc_std,
+            cv_fold_scores=cv_fold_scores,
+            train_samples=len(split.X_train),
+            test_samples=len(split.X_test),
+            feature_count=len(feature_names),
+            features=feature_names,
+            random_state=random_state,
+            model_artifact=str(model_file.name),
+        )
 
     metadata_file = out_path / "metadata.json"
-    with open(metadata_file, "w", encoding="utf-8") as f:
-        json.dump(meta_dict, f, indent=2)
+    metadata.save(metadata_file)
 
     return PipelineRunSummary(
         timestamp=timestamp,
