@@ -2,11 +2,33 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 import streamlit as st
+
+# Ensure repository src directory is prioritized in sys.path
+SRC_DIR = str(Path(__file__).resolve().parent.parent.parent)
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
 from final_project.dashboard.styles import apply_custom_styles, COLORS
 from final_project.dashboard.state import load_metadata
 from final_project.dashboard.pages.kpi_overview import render_kpi_overview_page
+from final_project.dashboard.pages.model_diagnostics import render_model_diagnostics_page
+from final_project.dashboard.pages.drift_monitor import render_drift_monitor_page
+from final_project.dashboard.pages.retention_triage import render_retention_triage_page
+from final_project.dashboard.pages.experiment_hub import render_experiment_hub_page
+
+
+def check_fastapi_health(url: str = "http://localhost:8000/health") -> bool:
+    """Check if the local FastAPI inference service is running."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=0.6) as response:
+            return response.status == 200
+    except Exception:
+        return False
 
 
 def main() -> None:
@@ -21,11 +43,12 @@ def main() -> None:
     # 1. Apply global dark modern styles & fonts
     apply_custom_styles()
 
-    # 2. Load system metadata
+    # 2. Load system metadata & health
     meta = load_metadata()
     model_algo = meta.get("algorithm", "RandomForestClassifier")
     optimal_cutoff = meta.get("optimal_threshold", 0.12)
     feature_count = meta.get("feature_count", 27)
+    api_online = check_fastapi_health()
 
     # 3. Sidebar Brand & Navigation
     with st.sidebar:
@@ -48,10 +71,16 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
+        api_badge = (
+            '<span class="badge badge-emerald">● API SERVICE ONLINE (8000)</span>'
+            if api_online
+            else '<span class="badge badge-blue">● IN-PROCESS ENGINE ACTIVE</span>'
+        )
+
         st.markdown(
             f"""
             <div style="margin-bottom: 1.25rem;">
-                <span class="badge badge-emerald">● SYSTEM OPERATIONAL</span>
+                {api_badge}
             </div>
             """,
             unsafe_allow_html=True,
@@ -79,12 +108,18 @@ def main() -> None:
                 <div><b>Algorithm:</b> <code style="color: #60A5FA;">{model_algo}</code></div>
                 <div><b>Optimal Cutoff:</b> <code style="color: #34D399;">{optimal_cutoff:.2f}</code></div>
                 <div><b>Input Features:</b> <code>{feature_count} numeric</code></div>
+                <div><b>Customer Base:</b> <code>7,043 accounts</code></div>
                 <div><b>Label Lag:</b> <code>2 weeks</code></div>
                 <div><b>Retraining:</b> <code>Adaptive Exponential</code></div>
             </div>
             """,
             unsafe_allow_html=True,
         )
+
+        st.markdown("<div style='height: 0.8rem;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Reload Data & Clear Cache", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
         st.markdown(
             """
@@ -95,37 +130,22 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    # 4. Route to page
-    if selected_page == "📊 Executive KPI Overview":
-        render_kpi_overview_page()
-    elif selected_page == "📈 Model Benchmark & Diagnostics":
-        try:
-            from final_project.dashboard.pages.model_diagnostics import render_model_diagnostics_page
-
+    # 4. Route to page with error boundary
+    try:
+        if selected_page == "📊 Executive KPI Overview":
+            render_kpi_overview_page()
+        elif selected_page == "📈 Model Benchmark & Diagnostics":
             render_model_diagnostics_page()
-        except ImportError:
-            st.info("📈 Model Benchmark & Diagnostics page will be rendered here (Issue #25).")
-    elif selected_page == "🔄 Drift & Retraining Monitor":
-        try:
-            from final_project.dashboard.pages.drift_monitor import render_drift_monitor_page
-
+        elif selected_page == "🔄 Drift & Retraining Monitor":
             render_drift_monitor_page()
-        except ImportError:
-            st.info("🔄 Drift & Retraining Monitor page will be rendered here (Issue #26).")
-    elif selected_page == "🎯 Live Retention Scoring & Triage":
-        try:
-            from final_project.dashboard.pages.retention_triage import render_retention_triage_page
-
+        elif selected_page == "🎯 Live Retention Scoring & Triage":
             render_retention_triage_page()
-        except ImportError:
-            st.info("🎯 Live Retention Scoring & Triage page will be rendered here (Issue #27).")
-    elif selected_page == "🧪 MLflow Experiment Hub":
-        try:
-            from final_project.dashboard.pages.experiment_hub import render_experiment_hub_page
-
+        elif selected_page == "🧪 MLflow Experiment Hub":
             render_experiment_hub_page()
-        except ImportError:
-            st.info("🧪 MLflow Experiment Hub page will be rendered here (Issue #28).")
+    except Exception as exc:
+        st.error(f"⚠️ Error rendering {selected_page}: {exc}")
+        with st.expander("Show Detailed Error Traceback"):
+            st.exception(exc)
 
 
 if __name__ == "__main__":

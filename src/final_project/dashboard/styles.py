@@ -285,11 +285,17 @@ def render_metric_card(
     delta_variant: str = "positive",
     subtext: str | None = None,
     icon: str | None = None,
+    *,
+    delta_type: str | None = None,
+    sublabel: str | None = None,
 ) -> None:
     """Render a premium glassmorphic KPI card with delta pill and subtext."""
-    delta_class = f"delta-{delta_variant}"
+    effective_variant = delta_type if delta_type is not None else delta_variant
+    effective_subtext = sublabel if sublabel is not None else subtext
+
+    delta_class = f"delta-{effective_variant}"
     delta_html = f'<span class="metric-delta {delta_class}">{delta}</span>' if delta else ""
-    subtext_html = f'<div class="metric-subtext">{subtext}</div>' if subtext else ""
+    subtext_html = f'<div class="metric-subtext">{effective_subtext}</div>' if effective_subtext else ""
     icon_html = f"<span>{icon}</span>" if icon else ""
 
     html = f"""
@@ -308,3 +314,4 @@ def render_metric_card(
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
+
