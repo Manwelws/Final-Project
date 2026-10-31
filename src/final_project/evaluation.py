@@ -34,6 +34,12 @@ class ThresholdMetrics:
     f2: float
     cost: float
 
+    @property
+    def fpr(self) -> float:
+        """False positive rate: FP / (TN + FP)."""
+        total_negatives = self.tn + self.fp
+        return float(self.fp / total_negatives) if total_negatives > 0 else 0.0
+
 
 @dataclass(frozen=True)
 class OptimizationResult:
@@ -59,6 +65,96 @@ class EvaluationSummary:
     cost_optimal_metrics: ThresholdMetrics
     report_path: str
     figures: list[str]
+
+
+@dataclass(frozen=True)
+class EvaluationReport:
+    """Rich domain module encapsulating holdout evaluation metrics, optimization, and report rendering."""
+
+    y_true: np.ndarray
+    y_probs: np.ndarray
+    roc_auc: float
+    pr_auc: float
+    brier_score: float
+    optimization: OptimizationResult
+    cost_matrix: CostMatrix
+
+    @classmethod
+    def compute(
+        cls,
+        y_true: np.ndarray | pd.Series,
+        y_probs: np.ndarray | pd.Series,
+        cost_matrix: CostMatrix | None = None,
+        cost_fn: float = 200.0,
+        cost_fp: float = 20.0,
+        step: float = 0.01,
+    ) -> "EvaluationReport":
+        """Pure in-process computation: derives all metrics and optimization without filesystem I/O."""
+        if cost_matrix is None:
+            cost_matrix = CostMatrix(cost_fn=cost_fn, cost_fp=cost_fp)
+
+        y_true_arr = np.asarray(y_true).ravel()
+        y_probs_arr = np.asarray(y_probs).ravel()
+
+        roc_auc = float(roc_auc_score(y_true_arr, y_probs_arr))
+        pr_auc = float(average_precision_score(y_true_arr, y_probs_arr))
+        brier_score = float(brier_score_loss(y_true_arr, y_probs_arr))
+
+        optimization = optimize_threshold(
+            y_true=y_true_arr,
+            y_probs=y_probs_arr,
+            cost_matrix=cost_matrix,
+            step=step,
+        )
+
+        return cls(
+            y_true=y_true_arr,
+            y_probs=y_probs_arr,
+            roc_auc=roc_auc,
+            pr_auc=pr_auc,
+            brier_score=brier_score,
+            optimization=optimization,
+            cost_matrix=cost_matrix,
+        )
+
+    def render_plots(self, figures_dir: Path | str) -> list[str]:
+        """Render diagnostic matplotlib figures to disk."""
+        return render_evaluation_plots(report=self, figures_dir=figures_dir)
+
+    def write_markdown(self, report_file: Path | str) -> None:
+        """Write executive markdown comparison report."""
+        generate_evaluation_report(report=self, report_file=report_file)
+
+    def to_metadata_dict(self) -> dict[str, Any]:
+        """Convert holdout metrics into a dict formatted for models/metadata.json."""
+        return {
+            "optimal_threshold": self.optimization.cost_optimal_threshold,
+            "cost_savings": self.optimization.cost_savings,
+            "cost_at_optimal": self.optimization.cost_at_optimal,
+            "cost_at_default": self.optimization.cost_at_default,
+            "holdout_roc_auc": self.roc_auc,
+            "holdout_pr_auc": self.pr_auc,
+            "holdout_brier_score": self.brier_score,
+            "threshold_comparison": {
+                "default_0_50": asdict(self.optimization.default_metrics),
+                "f1_optimal": asdict(self.optimization.f1_optimal_metrics),
+                "cost_optimal": asdict(self.optimization.cost_optimal_metrics),
+            },
+        }
+
+    def to_summary(self, report_path: str = "", figures: list[str] | None = None) -> EvaluationSummary:
+        """Convert to EvaluationSummary for backward compatibility."""
+        return EvaluationSummary(
+            roc_auc=self.roc_auc,
+            pr_auc=self.pr_auc,
+            brier_score=self.brier_score,
+            optimal_threshold=self.optimization.cost_optimal_threshold,
+            cost_savings=self.optimization.cost_savings,
+            default_metrics=self.optimization.default_metrics,
+            cost_optimal_metrics=self.optimization.cost_optimal_metrics,
+            report_path=report_path,
+            figures=figures or [],
+        )
 
 
 def compute_metrics_at_threshold(
@@ -195,42 +291,23 @@ def run_evaluation(
     y_test_arr = split.y_test.to_numpy()
     y_probs = model.predict_proba(split.X_test)[:, 1]
 
-    # Step 4: Compute global discrimination and calibration metrics
-    roc_auc = float(roc_auc_score(y_test_arr, y_probs))
-    pr_auc = float(average_precision_score(y_test_arr, y_probs))
-    brier_score = float(brier_score_loss(y_test_arr, y_probs))
-
-    # Step 5: Cost-Utility Threshold Optimization
-    opt_result = optimize_threshold(
+    # Step 4: Compute evaluation report (pure in-process domain entity)
+    report = EvaluationReport.compute(
         y_true=y_test_arr,
         y_probs=y_probs,
         cost_matrix=cost_matrix,
     )
 
-    # Step 6: Generate Figures & Markdown Report via presentation adapter
+    # Step 5: Generate Figures & Markdown Report via report methods
     rep_dir = Path(report_dir)
     rep_dir.mkdir(parents=True, exist_ok=True)
     figures_dir = rep_dir / "figures"
-    plot_files = render_evaluation_plots(
-        y_true=y_test_arr,
-        y_probs=y_probs,
-        opt_result=opt_result,
-        roc_auc=roc_auc,
-        pr_auc=pr_auc,
-        brier_score=brier_score,
-        figures_dir=figures_dir,
-    )
+    plot_files = report.render_plots(figures_dir=figures_dir)
 
     report_file = rep_dir / "evaluation_report.md"
-    summary_data = {
-        "test_samples": len(split.X_test),
-        "roc_auc": roc_auc,
-        "pr_auc": pr_auc,
-        "brier_score": brier_score,
-    }
-    generate_evaluation_report(summary_data, opt_result, report_file)
+    report.write_markdown(report_file=report_file)
 
-    # Step 7: Update models/metadata.json with optimal threshold details
+    # Step 6: Update models/metadata.json with optimal threshold details
     meta_p = Path(metadata_path)
     if meta_p.exists():
         try:
@@ -241,32 +318,9 @@ def run_evaluation(
     else:
         meta = {}
 
-    meta.update({
-        "optimal_threshold": opt_result.cost_optimal_threshold,
-        "cost_savings": opt_result.cost_savings,
-        "cost_at_optimal": opt_result.cost_at_optimal,
-        "cost_at_default": opt_result.cost_at_default,
-        "holdout_roc_auc": roc_auc,
-        "holdout_pr_auc": pr_auc,
-        "holdout_brier_score": brier_score,
-        "threshold_comparison": {
-            "default_0_50": asdict(opt_result.default_metrics),
-            "f1_optimal": asdict(opt_result.f1_optimal_metrics),
-            "cost_optimal": asdict(opt_result.cost_optimal_metrics),
-        },
-    })
+    meta.update(report.to_metadata_dict())
 
     metadata = ModelMetadata.from_dict(meta)
     metadata.save(meta_p)
 
-    return EvaluationSummary(
-        roc_auc=roc_auc,
-        pr_auc=pr_auc,
-        brier_score=brier_score,
-        optimal_threshold=opt_result.cost_optimal_threshold,
-        cost_savings=opt_result.cost_savings,
-        default_metrics=opt_result.default_metrics,
-        cost_optimal_metrics=opt_result.cost_optimal_metrics,
-        report_path=str(report_file),
-        figures=plot_files,
-    )
+    return report.to_summary(report_path=str(report_file), figures=plot_files)

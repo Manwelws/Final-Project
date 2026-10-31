@@ -17,6 +17,7 @@ from final_project.evaluation import (
     ThresholdMetrics,
     OptimizationResult,
     EvaluationSummary,
+    EvaluationReport,
 )
 from final_project.explainability import (
     run_explanation,
@@ -50,6 +51,7 @@ from final_project.simulation import (
     SimulationRunResults,
     DualDriftMonitor,
     StreamingBatchEngine,
+    run_simulation,
 )
 
 __all__ = [
@@ -73,6 +75,7 @@ __all__ = [
     "ThresholdMetrics",
     "OptimizationResult",
     "EvaluationSummary",
+    "EvaluationReport",
     "run_explanation",
     "group_shap_by_parent_features",
     "explain_customer_instance",
@@ -94,4 +97,5 @@ __all__ = [
     "SimulationRunResults",
     "DualDriftMonitor",
     "StreamingBatchEngine",
+    "run_simulation",
 ]

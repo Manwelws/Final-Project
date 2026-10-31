@@ -190,6 +190,9 @@ class SimulationRunner:
         retraining_dir: Path | str = "data/retraining",
         drift_dir: Path | str = "data/drift",
         save_artifacts: bool = True,
+        monitor: DualDriftMonitor | None = None,
+        engine: StreamingBatchEngine | None = None,
+        verbose: bool = True,
     ):
         self.config = config or SimulationConfig()
         self.base_model = base_model
@@ -200,9 +203,15 @@ class SimulationRunner:
         self.retraining_dir = Path(retraining_dir)
         self.drift_dir = Path(drift_dir)
         self.save_artifacts = save_artifacts
+        self.verbose = verbose
 
-        self.monitor = DualDriftMonitor(auc_drop_threshold=self.config.auc_drop_threshold)
-        self.engine = StreamingBatchEngine(self.config)
+        self.monitor = monitor or DualDriftMonitor(auc_drop_threshold=self.config.auc_drop_threshold)
+        self.engine = engine or StreamingBatchEngine(self.config)
+
+    def _log(self, message: str) -> None:
+        """Internal logging respecting verbose flag."""
+        if self.verbose:
+            print(message)
 
     def _resolve_base_model(self) -> Any:
         if self.base_model is not None:
@@ -210,35 +219,34 @@ class SimulationRunner:
         for name in ["model.joblib", "best_model.joblib"]:
             p = self.models_dir / name
             if p.exists():
-                print(f"Loading production model artifact from {p}")
+                self._log(f"Loading production model artifact from {p}")
                 return joblib.load(p)
         raise FileNotFoundError(
             f"Production model artifact not found in {self.models_dir}. Run 'churn train' first."
         )
 
-    def run(self) -> SimulationRunResults:
-        """Run the multi-week streaming simulation."""
-        base_production_model = self._resolve_base_model()
-
-        # Create output directories if saving
+    def _setup_directories(self) -> tuple[Path, Path, Path]:
+        live_feat_dir = self.live_dir / "features"
+        live_label_dir = self.live_dir / "labels"
+        live_pend_dir = self.live_dir / "pending"
         if self.save_artifacts:
-            live_feat_dir = self.live_dir / "features"
-            live_label_dir = self.live_dir / "labels"
-            live_pend_dir = self.live_dir / "pending"
-            for d in [live_feat_dir, live_label_dir, live_pend_dir,
-                      self.reference_dir, self.retraining_dir, self.drift_dir]:
+            for d in [
+                live_feat_dir,
+                live_label_dir,
+                live_pend_dir,
+                self.reference_dir,
+                self.retraining_dir,
+                self.drift_dir,
+            ]:
                 d.mkdir(parents=True, exist_ok=True)
-        else:
-            live_feat_dir = self.live_dir / "features"
-            live_label_dir = self.live_dir / "labels"
-            live_pend_dir = self.live_dir / "pending"
+        return live_feat_dir, live_label_dir, live_pend_dir
 
-        # Load population using authoritative loader
+    def _prepare_stream(self) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+        """Load features, partition reference/population, and inject weekly drift."""
         X, y_series = load_features_and_target(self.data_dir)
         y = pd.DataFrame({"Churn Value": y_series})
 
         reference, population = self.engine.prepare_population_and_reference(X, y)
-
 
         if self.save_artifacts:
             reference.to_csv(self.reference_dir / "X_reference.csv", index=False)
@@ -246,26 +254,27 @@ class SimulationRunner:
                 self.reference_dir / "y_reference.csv", index=False
             )
 
-        print(f"Population size: {len(population)}")
-        print(f"Reference set size: {len(reference)}")
+        self._log(f"Population size: {len(population)}")
+        self._log(f"Reference set size: {len(reference)}")
 
         weekly_batches = self.engine.build_weekly_batches(population)
         weekly_batches = self.engine.inject_drift(weekly_batches)
 
         master = pd.concat(weekly_batches, ignore_index=True)
-        print(f"Total weekly records (with returning duplicates): {len(master)}")
-        print(f"Unique customers: {master['customer_id'].nunique()}")
+        self._log(f"Total weekly records (with returning duplicates): {len(master)}")
+        self._log(f"Unique customers: {master['customer_id'].nunique()}")
 
         meta_cols = ["customer_id", "Churn Value", "feature_available_week", "label_release_week"]
         feature_cols = [c for c in master.columns if c not in meta_cols]
+        return reference, master, feature_cols
 
-        X_ref = reference[feature_cols].copy()
-        y_ref = reference["Churn Value"].values
-
-        drift_metrics: list[dict[str, Any]] = []
-        retrained_weeks: list[int] = []
-
-        # Never-retrain baseline (fitted on pre-drift released data)
+    def _fit_never_retrain_baseline(
+        self,
+        base_production_model: Any,
+        master: pd.DataFrame,
+        feature_cols: list[str],
+    ) -> Any:
+        """Fit static never-retrain baseline on pre-drift released data."""
         never_retrain_data = master[
             master["label_release_week"] <= self.config.drift_start_week
         ].copy()
@@ -275,17 +284,33 @@ class SimulationRunner:
             y_nr = never_retrain_data["Churn Value"].values
             model_never = clone(base_production_model)
             model_never.fit(X_nr, y_nr)
-            print(f"\nNever-retrain baseline fitted on {len(never_retrain_data)} samples (weeks 1-{self.config.drift_start_week})")
+            self._log(
+                f"\nNever-retrain baseline fitted on {len(never_retrain_data)} samples "
+                f"(weeks 1-{self.config.drift_start_week})"
+            )
         else:
             model_never = clone(base_production_model)
-            print("WARNING: Using base production model directly for never-retrain baseline")
+            self._log("WARNING: Using base production model directly for never-retrain baseline")
+        return model_never
 
+    def run(self) -> SimulationRunResults:
+        """Run the multi-week streaming simulation."""
+        base_production_model = self._resolve_base_model()
+        live_feat_dir, live_label_dir, live_pend_dir = self._setup_directories()
+        reference, master, feature_cols = self._prepare_stream()
+
+        X_ref = reference[feature_cols].copy()
+        y_ref = reference["Churn Value"].values
+
+        model_never = self._fit_never_retrain_baseline(base_production_model, master, feature_cols)
         model_retrain: Any | None = None
+        auc_never: float | None = None
+
+        drift_metrics: list[dict[str, Any]] = []
+        retrained_weeks: list[int] = []
 
         for week in range(1, self.config.n_weeks + 1):
-            print(f"\n{'='*60}")
-            print(f"SIMULATION WEEK {week}")
-            print(f"{'='*60}")
+            self._log(f"\n{'='*60}\nSIMULATION WEEK {week}\n{'='*60}")
 
             # 1. Release features for week
             week_features = master[
@@ -303,7 +328,7 @@ class SimulationRunner:
             psi_mean = psi_info["psi_mean"]
             psi_max = psi_info["psi_max"]
             psi_status = psi_info["psi_status"]
-            print(f"  Unsupervised Drift Monitor (PSI): mean={psi_mean:.4f}, max={psi_max:.4f} [{psi_status}]")
+            self._log(f"  Unsupervised Drift Monitor (PSI): mean={psi_mean:.4f}, max={psi_max:.4f} [{psi_status}]")
 
             # 3. Release delayed labels
             release_week = week - self.config.label_delay_weeks
@@ -316,15 +341,15 @@ class SimulationRunner:
                     pending_file = live_pend_dir / f"week_{release_week}_pending.csv"
                     if pending_file.exists():
                         pending_file.unlink()
-                print(f"  Labels released for week {release_week}")
+                self._log(f"  Labels released for week {release_week}")
 
             # 4. Check available labeled data
             labeled_data = master[master["label_release_week"] <= week].copy()
             n_labeled = len(labeled_data)
-            print(f"  Labeled samples available: {n_labeled}")
+            self._log(f"  Labeled samples available: {n_labeled}")
 
             if n_labeled < self.config.min_labels_for_retrain:
-                print("  Not enough labeled data to train/evaluate yet.")
+                self._log("  Not enough labeled data to train/evaluate yet.")
                 drift_metrics.append({
                     "week": week,
                     "n_labeled": n_labeled,
@@ -360,7 +385,7 @@ class SimulationRunner:
             if model_never is not None:
                 y_never_pred = model_never.predict_proba(X_ref)[:, 1]
                 auc_never = float(roc_auc_score(y_ref, y_never_pred))
-                print(f"  Never-retrain AUC on static reference: {auc_never:.4f}")
+                self._log(f"  Never-retrain AUC on static reference: {auc_never:.4f}")
 
             # 7. Supervised performance decay check
             should_retrain = False
@@ -372,7 +397,7 @@ class SimulationRunner:
             else:
                 y_ret_pred = model_retrain.predict_proba(X_recent)[:, 1]
                 auc_ret_recent = float(roc_auc_score(y_recent, y_ret_pred))
-                print(f"  Retrain-model AUC on recent live data: {auc_ret_recent:.4f}")
+                self._log(f"  Retrain-model AUC on recent live data: {auc_ret_recent:.4f}")
 
                 decay_triggered, reason = self.monitor.check_decay(
                     recent_auc=auc_ret_recent,
@@ -382,11 +407,11 @@ class SimulationRunner:
                     should_retrain = True
                     trigger_reason = reason
                 else:
-                    print(f"  No retraining triggered (best recent AUC: {self.monitor.best_recent_auc:.4f})")
+                    self._log(f"  No retraining triggered (best recent AUC: {self.monitor.best_recent_auc:.4f})")
 
             # 8. Retraining with Exponential Sample Decay
             if should_retrain and n_labeled >= self.config.min_labels_for_retrain:
-                print(f"  RETRAINING triggered: {trigger_reason}")
+                self._log(f"  RETRAINING triggered: {trigger_reason}")
 
                 sample_weights = compute_exponential_sample_weights(
                     current_week=week,
@@ -405,8 +430,8 @@ class SimulationRunner:
                 auc_ret_ref = float(roc_auc_score(y_ref, y_ret_pred_ref))
 
                 retrained_weeks.append(week)
-                print(f"  Retrained model AUC on recent live data: {auc_ret_recent:.4f}")
-                print(f"  Retrained model AUC on static reference: {auc_ret_ref:.4f}")
+                self._log(f"  Retrained model AUC on recent live data: {auc_ret_recent:.4f}")
+                self._log(f"  Retrained model AUC on static reference: {auc_ret_ref:.4f}")
 
                 if self.save_artifacts:
                     retrain_dir = self.retraining_dir / f"week_{week}"
@@ -434,7 +459,7 @@ class SimulationRunner:
                     self.monitor.update_best_auc(max(self.monitor.best_recent_auc, auc_ret_recent))
                 else:
                     self.monitor.update_best_auc(auc_ret_recent)
-                print(f"  Retrain-model AUC on recent live data: {auc_ret_recent:.4f}")
+                self._log(f"  Retrain-model AUC on recent live data: {auc_ret_recent:.4f}")
 
             drift_metrics.append({
                 "week": week,
@@ -456,17 +481,15 @@ class SimulationRunner:
         if self.save_artifacts:
             drift_metrics_df.to_csv(self.drift_dir / "drift_metrics.csv", index=False)
 
-        print(f"\n{'='*60}")
-        print("SIMULATION COMPLETE")
-        print(f"{'='*60}")
-        print(f"Retraining triggered at weeks: {retrained_weeks}")
+        self._log(f"\n{'='*60}\nSIMULATION COMPLETE\n{'='*60}")
+        self._log(f"Retraining triggered at weeks: {retrained_weeks}")
         if self.save_artifacts:
-            print(f"Metrics saved to {self.drift_dir / 'drift_metrics.csv'}")
-            print(f"Retraining artifacts in {self.retraining_dir}")
+            self._log(f"Metrics saved to {self.drift_dir / 'drift_metrics.csv'}")
+            self._log(f"Retraining artifacts in {self.retraining_dir}")
 
         if not drift_metrics_df.empty:
-            print("\nDrift Metrics Summary:")
-            print(drift_metrics_df.to_string(index=False))
+            self._log("\nDrift Metrics Summary:")
+            self._log(drift_metrics_df.to_string(index=False))
 
         return SimulationRunResults(
             drift_metrics=drift_metrics_df,
@@ -475,3 +498,23 @@ class SimulationRunner:
             final_retrain_auc_recent=self.monitor.best_recent_auc,
             artifacts_saved=self.save_artifacts,
         )
+
+
+def run_simulation(
+    config: SimulationConfig | None = None,
+    base_model: Any | None = None,
+    data_dir: Path | str = "data/processed",
+    models_dir: Path | str = "models",
+    save_artifacts: bool = True,
+    verbose: bool = True,
+) -> SimulationRunResults:
+    """Convenience function running streaming retraining simulation with standard conventions."""
+    runner = SimulationRunner(
+        config=config,
+        base_model=base_model,
+        data_dir=data_dir,
+        models_dir=models_dir,
+        save_artifacts=save_artifacts,
+        verbose=verbose,
+    )
+    return runner.run()

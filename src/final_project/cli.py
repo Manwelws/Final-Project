@@ -7,6 +7,7 @@ from final_project.models import benchmark_candidates
 from final_project.pipeline import run_training
 from final_project.evaluation import run_evaluation
 from final_project.explainability import run_explanation
+from final_project.simulation import SimulationConfig, run_simulation
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -222,6 +223,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run Streamlit in headless mode without spawning local browser window",
     )
 
+    # Simulate subcommand
+    sim_parser = subparsers.add_parser(
+        "simulate",
+        help="Run multi-week streaming data, drift injection, and automated retraining simulation",
+    )
+    sim_parser.add_argument(
+        "--n-weeks",
+        type=int,
+        default=8,
+        help="Number of simulated streaming weeks (default: 8)",
+    )
+    sim_parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="data/processed",
+        help="Directory containing X_features.csv and y_target.csv",
+    )
+    sim_parser.add_argument(
+        "--models-dir",
+        type=str,
+        default="models",
+        help="Directory containing production model artifact",
+    )
+    sim_parser.add_argument(
+        "--no-save",
+        action="store_true",
+        default=False,
+        help="Do not save simulation artifacts to data/live, data/drift, and data/retraining",
+    )
+    sim_parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random seed for simulation reproducibility (default: 42)",
+    )
+
     return parser
 
 
@@ -387,6 +424,31 @@ def main(argv: list[str] | None = None) -> int:
         except KeyboardInterrupt:
             print("\nDashboard server terminated by user.")
             return 0
+
+    if args.subcommand == "simulate":
+        print(f"Starting weekly streaming simulation ({args.n_weeks} weeks)...")
+        print(f"  Data directory: {args.data_dir}")
+        print(f"  Models directory: {args.models_dir}")
+        print(f"  Artifact saving: {'Disabled' if args.no_save else 'Enabled'}")
+
+        config = SimulationConfig(
+            n_weeks=args.n_weeks,
+            random_state=args.random_state,
+        )
+        results = run_simulation(
+            config=config,
+            data_dir=args.data_dir,
+            models_dir=args.models_dir,
+            save_artifacts=not args.no_save,
+            verbose=True,
+        )
+
+        print(f"\nSimulation Completed Successfully!")
+        print(f"  Weeks executed: {len(results.drift_metrics)}")
+        print(f"  Retraining triggered at weeks: {results.retrained_weeks}")
+        if results.final_retrain_auc_recent is not None:
+            print(f"  Final Retrained AUC (recent live): {results.final_retrain_auc_recent:.4f}")
+        return 0
 
     print(f"Unknown subcommand: {args.subcommand}", file=sys.stderr)
     return 1
