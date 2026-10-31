@@ -198,6 +198,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Random seed for reproducibility (default: 42)",
     )
 
+    # Dashboard subcommand
+    dash_parser = subparsers.add_parser(
+        "dashboard",
+        help="Launch the interactive ChurnOps Streamlit Operations Dashboard",
+    )
+    dash_parser.add_argument(
+        "--port",
+        type=int,
+        default=8501,
+        help="Port to serve Streamlit web dashboard (default: 8501)",
+    )
+    dash_parser.add_argument(
+        "--host",
+        type=str,
+        default="0.0.0.0",
+        help="Host address to bind Streamlit web dashboard (default: 0.0.0.0)",
+    )
+    dash_parser.add_argument(
+        "--headless",
+        action="store_true",
+        default=True,
+        help="Run Streamlit in headless mode without spawning local browser window",
+    )
+
     return parser
 
 
@@ -339,6 +363,30 @@ def main(argv: list[str] | None = None) -> int:
         for fig in result.generated_figures:
             print(f"  - {fig}")
         return 0
+
+    if args.subcommand == "dashboard":
+        import subprocess
+
+        app_path = Path(__file__).parent / "dashboard" / "app.py"
+        cmd = [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            str(app_path),
+            "--server.port",
+            str(args.port),
+            "--server.address",
+            str(args.host),
+            "--server.headless",
+            "true" if args.headless else "false",
+        ]
+        print(f"Launching ChurnOps Streamlit Dashboard on http://{args.host}:{args.port}...")
+        try:
+            return subprocess.call(cmd)
+        except KeyboardInterrupt:
+            print("\nDashboard server terminated by user.")
+            return 0
 
     print(f"Unknown subcommand: {args.subcommand}", file=sys.stderr)
     return 1
