@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+mlruns
+data/live
+data/raw
+notebooks
+reports
+.DS_Store

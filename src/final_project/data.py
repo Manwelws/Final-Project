@@ -12,6 +12,20 @@ class DataSplit:
     y_test: pd.Series
 
 
+def load_features_and_target(
+    data_dir: Path | str = "data/processed",
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Load features and target DataFrames without splitting."""
+    data_dir = Path(data_dir)
+    X = pd.read_csv(data_dir / "X_features.csv")
+    y_df = pd.read_csv(data_dir / "y_target.csv")
+    if "Churn Value" in y_df.columns:
+        y = y_df["Churn Value"]
+    else:
+        y = y_df.iloc[:, 0]
+    return X, y
+
+
 def load_and_split_data(
     features_path: Path | str,
     target_path: Path | str,
@@ -42,3 +56,20 @@ def load_and_split_data(
         y_train=y_train,
         y_test=y_test,
     )
+
+
+def get_stratified_split(
+    X: pd.DataFrame,
+    y: pd.Series,
+    test_size: float = 0.20,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """Perform a stratified split on feature and target DataFrames directly."""
+    return train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        stratify=y,
+        random_state=random_state,
+    )
+

@@ -5,6 +5,8 @@ from pathlib import Path
 from final_project.data import load_and_split_data
 from final_project.models import benchmark_candidates
 from final_project.pipeline import run_training
+from final_project.evaluation import run_evaluation
+from final_project.explainability import run_explanation
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +60,29 @@ def build_parser() -> argparse.ArgumentParser:
         default=42,
         help="Random seed for reproducibility (default: 42)",
     )
+    train_parser.add_argument(
+        "--tune",
+        action="store_true",
+        help="Run Optuna Bayesian hyperparameter optimization study across candidates",
+    )
+    train_parser.add_argument(
+        "--n-trials",
+        type=int,
+        default=50,
+        help="Total Optuna tuning budget across candidates (default: 50)",
+    )
+    train_parser.add_argument(
+        "--experiment-name",
+        type=str,
+        default="churn_retraining_optimization",
+        help="MLflow experiment name for trial tracking (default: churn_retraining_optimization)",
+    )
+    train_parser.add_argument(
+        "--tracking-uri",
+        type=str,
+        default="file:./mlruns",
+        help="MLflow tracking URI (default: file:./mlruns)",
+    )
 
     # Benchmark subcommand
     bench_parser = subparsers.add_parser(
@@ -83,6 +108,96 @@ def build_parser() -> argparse.ArgumentParser:
         help="Random seed for reproducibility (default: 42)",
     )
 
+    # Evaluate subcommand
+    eval_parser = subparsers.add_parser(
+        "evaluate",
+        help="Evaluate model on holdout test set and optimize decision threshold",
+    )
+    eval_parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="data/processed",
+        help="Directory containing X_features.csv and y_target.csv",
+    )
+    eval_parser.add_argument(
+        "--model-path",
+        type=str,
+        default="models/model.joblib",
+        help="Path to serialized model artifact",
+    )
+    eval_parser.add_argument(
+        "--metadata-path",
+        type=str,
+        default="models/metadata.json",
+        help="Path to model metadata JSON file to update",
+    )
+    eval_parser.add_argument(
+        "--report-dir",
+        type=str,
+        default="reports",
+        help="Directory to save markdown report and diagnostic figures",
+    )
+    eval_parser.add_argument(
+        "--cost-fn",
+        type=float,
+        default=200.0,
+        help="Financial loss of a false negative / missed churner (default: 200.0)",
+    )
+    eval_parser.add_argument(
+        "--cost-fp",
+        type=float,
+        default=20.0,
+        help="Cost of a false positive / retention incentive offer (default: 20.0)",
+    )
+    eval_parser.add_argument(
+        "--test-size",
+        type=float,
+        default=0.20,
+        help="Holdout test split proportion (default: 0.20)",
+    )
+    eval_parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+
+    # Explain subcommand
+    explain_parser = subparsers.add_parser(
+        "explain",
+        help="Explain model predictions and feature importance with SHAP TreeExplainer",
+    )
+    explain_parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="data/processed",
+        help="Directory containing X_features.csv and y_target.csv",
+    )
+    explain_parser.add_argument(
+        "--model-path",
+        type=str,
+        default="models/model.joblib",
+        help="Path to serialized model artifact",
+    )
+    explain_parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="reports/figures",
+        help="Directory to save generated SHAP diagnostic plots",
+    )
+    explain_parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=150,
+        help="Maximum sample size to explain with SHAP (default: 150)",
+    )
+    explain_parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+
     return parser
 
 
@@ -98,7 +213,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Starting training pipeline...")
         print(f"  Data directory: {args.data_dir}")
         print(f"  Output directory: {args.output_dir}")
-        print(f"  Algorithm: {args.algorithm} (balanced={args.balanced})")
+        if args.tune:
+            print(f"  Mode: Bayesian Hyperparameter Optimization (Optuna)")
+            print(f"  Tuning Budget: {args.n_trials} trials")
+            print(f"  MLflow Experiment: {args.experiment_name}")
+        else:
+            print(f"  Algorithm: {args.algorithm} (balanced={args.balanced})")
         print(f"  Stratified CV Folds: {args.cv_folds}")
 
         summary = run_training(
@@ -106,18 +226,22 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             algorithm=args.algorithm,
             balanced=args.balanced,
+            tune=args.tune,
+            n_trials=args.n_trials,
+            experiment_name=args.experiment_name,
+            tracking_uri=args.tracking_uri,
             test_size=args.test_size,
             cv_folds=args.cv_folds,
             random_state=args.random_state,
         )
 
         print(f"\nTraining completed successfully!")
-        print(f"  Algorithm: {summary.algorithm}")
+        print(f"  Winning Algorithm: {summary.algorithm}")
         print(f"  Balanced: {summary.balanced}")
         print(f"  Train samples: {summary.train_samples}")
         print(f"  Test samples: {summary.test_samples}")
         print(f"  Features: {summary.feature_count}")
-        print(f"  CV Mean ROC-AUC: {summary.cv_auc_mean:.4f} (+/- {summary.cv_auc_std:.4f})")
+        print(f"  CV Best/Mean ROC-AUC: {summary.cv_auc_mean:.4f} (+/- {summary.cv_auc_std:.4f})")
         print(f"  Fold Scores: {[round(s, 4) for s in summary.cv_fold_scores]}")
         print(f"  Model saved to: {summary.model_path}")
         print(f"  Metadata saved to: {summary.metadata_path}")
@@ -152,6 +276,68 @@ def main(argv: list[str] | None = None) -> int:
             pr_str = f"{row['pr_auc_mean']:.4f} ± {row['pr_auc_std']:.4f}"
             print(f"{i+1:<5} {row['model']:<15} {row['weighting']:<12} {roc_str:<20} {pr_str:<20}")
         print("=" * 72)
+        return 0
+
+    if args.subcommand == "evaluate":
+        print("Starting holdout evaluation and threshold optimization...")
+        print(f"  Model artifact: {args.model_path}")
+        print(f"  Data directory: {args.data_dir}")
+        print(f"  Cost Matrix: C_FN=${args.cost_fn:.0f}, C_FP=${args.cost_fp:.0f}")
+
+        summary = run_evaluation(
+            data_dir=args.data_dir,
+            model_path=args.model_path,
+            metadata_path=args.metadata_path,
+            report_dir=args.report_dir,
+            cost_fn=args.cost_fn,
+            cost_fp=args.cost_fp,
+            test_size=args.test_size,
+            random_state=args.random_state,
+        )
+
+        def_m = summary.default_metrics
+        opt_m = summary.cost_optimal_metrics
+
+        print(f"\nHoldout Evaluation Completed Successfully!")
+        print(f"  ROC-AUC: {summary.roc_auc:.4f}")
+        print(f"  PR-AUC:  {summary.pr_auc:.4f}")
+        print(f"  Brier Score: {summary.brier_score:.4f}")
+        print(f"\nThreshold Optimization Summary:")
+        print(f"  Default Cutoff (0.50):       Recall: {def_m.recall:.2%}, Loss: ${def_m.cost:,.0f}")
+        print(f"  Optimal Cutoff ({summary.optimal_threshold:.2f}):      Recall: {opt_m.recall:.2%}, Loss: ${opt_m.cost:,.0f}")
+        print(f"  Net Financial Savings:       ${summary.cost_savings:,.2f}")
+        print(f"\nArtifacts Created:")
+        print(f"  Markdown Report: {summary.report_path}")
+        print(f"  Diagnostic Plots ({len(summary.figures)}): {Path(args.report_dir) / 'figures'}")
+        return 0
+
+    if args.subcommand == "explain":
+        print("Starting model explainability analysis (SHAP TreeExplainer)...")
+        print(f"  Model artifact: {args.model_path}")
+        print(f"  Data directory: {args.data_dir}")
+        print(f"  Output directory: {args.output_dir}")
+        print(f"  Sample size: {args.max_samples}")
+
+        result = run_explanation(
+            data_dir=args.data_dir,
+            model_path=args.model_path,
+            output_dir=args.output_dir,
+            max_samples=args.max_samples,
+            random_state=args.random_state,
+        )
+
+        print(f"\nModel Explainability Completed Successfully!")
+        print(f"  Samples explained: {result.samples_explained}")
+        print(f"\nTop Parent Feature Importances (Aggregated Mean |SHAP|):")
+        print("=" * 60)
+        print(f"{'Rank':<5} {'Parent Feature':<30} {'Mean |SHAP|':<15}")
+        print("-" * 60)
+        for i, row in result.grouped_importance.head(10).iterrows():
+            print(f"{i+1:<5} {row['parent_feature']:<30} {row['mean_abs_shap']:.4f}")
+        print("=" * 60)
+        print(f"\nGenerated Diagnostic Figures ({len(result.generated_figures)}):")
+        for fig in result.generated_figures:
+            print(f"  - {fig}")
         return 0
 
     print(f"Unknown subcommand: {args.subcommand}", file=sys.stderr)

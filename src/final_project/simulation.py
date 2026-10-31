@@ -1,0 +1,474 @@
+"""Retraining simulation engine modeling streaming data, drift, and retraining."""
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+import json
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.base import clone
+from sklearn.metrics import roc_auc_score
+
+from final_project.drift import (
+    compute_dataset_psi,
+    compute_exponential_sample_weights,
+)
+from final_project.domain.policies import DriftPolicy, RetrainingPolicy
+
+
+@dataclass
+class SimulationConfig:
+    """Configuration parameters for weekly retraining simulation."""
+
+    n_weeks: int = 8
+    drift_start_week: int = 5
+    label_delay_weeks: int = 2
+    price_increase_mult: float = 1.25
+    tenure_factor: float = 0.70
+    concept_flip_prob: float = 0.30
+    returning_frac: float = 0.20
+    auc_drop_threshold: float = 0.05
+    min_labels_for_retrain: int = 200
+    reference_frac: float = 0.15
+    recent_window_weeks: int = 2
+    sample_decay_rate: float = 0.85
+    random_state: int = 42
+
+
+@dataclass(frozen=True)
+class SimulationRunResults:
+    """Summary and artifacts resulting from a simulation execution."""
+
+    drift_metrics: pd.DataFrame
+    retrained_weeks: list[int]
+    final_never_retrain_auc: float | None
+    final_retrain_auc_recent: float | None
+    artifacts_saved: bool
+
+
+class DualDriftMonitor:
+    """Dual-trigger monitor tracking unsupervised PSI and supervised performance decay."""
+
+    def __init__(
+        self,
+        auc_drop_threshold: float = 0.05,
+        drift_policy: DriftPolicy | None = None,
+    ):
+        self.auc_drop_threshold = auc_drop_threshold
+        self.drift_policy = drift_policy or DriftPolicy()
+        self.best_recent_auc: float | None = None
+
+    def evaluate_unsupervised_drift(
+        self,
+        reference_features: pd.DataFrame,
+        current_features: pd.DataFrame,
+    ) -> dict[str, Any]:
+        """Compute PSI across features and classify drift status."""
+        psi_results = compute_dataset_psi(reference_features, current_features)
+        psi_mean = float(psi_results["mean_psi"])
+        psi_max = float(psi_results["max_psi"])
+        psi_status = self.drift_policy.classify_psi(psi_max)
+        return {
+            "psi_mean": psi_mean,
+            "psi_max": psi_max,
+            "psi_status": psi_status,
+        }
+
+    def check_decay(
+        self,
+        recent_auc: float,
+        model_retrain_exists: bool,
+    ) -> tuple[bool, str]:
+        """Evaluate if model performance has degraded beyond tolerance."""
+        if not model_retrain_exists:
+            return True, "initial training"
+
+        if (
+            self.best_recent_auc is not None
+            and recent_auc < self.best_recent_auc - self.auc_drop_threshold
+        ):
+            reason = (
+                f"performance decay: recent AUC {recent_auc:.4f} < "
+                f"best {self.best_recent_auc:.4f} - {self.auc_drop_threshold}"
+            )
+            return True, reason
+
+        return False, "monitoring"
+
+    def update_best_auc(self, new_auc: float) -> None:
+        """Update historical peak performance benchmark."""
+        self.best_recent_auc = new_auc
+
+
+class StreamingBatchEngine:
+    """Generates weekly streaming batches and injects covariate and concept drift."""
+
+    def __init__(self, config: SimulationConfig):
+        self.config = config
+        self.rng = np.random.RandomState(config.random_state)
+
+    def prepare_population_and_reference(
+        self,
+        features: pd.DataFrame,
+        target: pd.DataFrame,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Combine features and target, assign synthetic customer IDs, and extract reference holdout."""
+        data = pd.concat([features, target], axis=1).reset_index(drop=True)
+        data["customer_id"] = data.index.astype(str)
+        data = data.sample(frac=1, random_state=self.config.random_state).reset_index(drop=True)
+
+        n_ref = int(len(data) * self.config.reference_frac)
+        reference = data.iloc[:n_ref].copy()
+        population = data.iloc[n_ref:].copy()
+        return reference, population
+
+    def build_weekly_batches(self, population: pd.DataFrame) -> list[pd.DataFrame]:
+        """Partition population into weekly streams with hybrid returning customer overlap."""
+        split_indices = np.array_split(np.arange(len(population)), self.config.n_weeks)
+        new_batches = [population.iloc[idx].reset_index(drop=True) for idx in split_indices]
+
+        weekly_batches: list[pd.DataFrame] = []
+        for i in range(self.config.n_weeks):
+            new_batch = new_batches[i].copy()
+
+            if i == 0:
+                weekly_batch = new_batch.copy()
+            else:
+                prev_batch = weekly_batches[i - 1]
+                n_returning = int(len(new_batch) * self.config.returning_frac)
+
+                if n_returning > 0 and len(prev_batch) > 0:
+                    returning = prev_batch.sample(
+                        n=n_returning, random_state=self.config.random_state + i
+                    ).copy()
+                    returning["Tenure Months"] = (returning["Tenure Months"] + 1).clip(upper=72)
+                    returning["Monthly Charges"] = returning["Monthly Charges"] * 1.02
+                    weekly_batch = pd.concat([new_batch, returning], ignore_index=True)
+                else:
+                    weekly_batch = new_batch.copy()
+
+            weekly_batch["feature_available_week"] = i + 1
+            weekly_batch["label_release_week"] = i + 1 + self.config.label_delay_weeks
+            weekly_batches.append(weekly_batch)
+
+        return weekly_batches
+
+    def inject_drift(self, weekly_batches: list[pd.DataFrame]) -> list[pd.DataFrame]:
+        """Inject covariate drift and concept drift from drift_start_week onwards."""
+        for i in range(self.config.drift_start_week - 1, self.config.n_weeks):
+            batch = weekly_batches[i]
+
+            # Covariate drift
+            batch["Monthly Charges"] = batch["Monthly Charges"] * self.config.price_increase_mult
+            batch["Tenure Months"] = (batch["Tenure Months"] * self.config.tenure_factor).round().clip(lower=0)
+
+            # Concept drift (flip 30% of high-charge retained to churned)
+            median_charge = batch["Monthly Charges"].median()
+            high_charge = batch["Monthly Charges"] > median_charge
+            was_retained = batch["Churn Value"] == 0
+            flip_mask = high_charge & was_retained & (self.rng.rand(len(batch)) < self.config.concept_flip_prob)
+            batch.loc[flip_mask, "Churn Value"] = 1
+            print(f"Week {i+1}: {int(flip_mask.sum())} labels flipped due to concept drift")
+
+        return weekly_batches
+
+
+class SimulationRunner:
+    """Orchestrates end-to-end streaming retraining simulation."""
+
+    def __init__(
+        self,
+        config: SimulationConfig | None = None,
+        base_model: Any | None = None,
+        data_dir: Path | str = "data/processed",
+        models_dir: Path | str = "models",
+        live_dir: Path | str = "data/live",
+        reference_dir: Path | str = "data/reference",
+        retraining_dir: Path | str = "data/retraining",
+        drift_dir: Path | str = "data/drift",
+        save_artifacts: bool = True,
+    ):
+        self.config = config or SimulationConfig()
+        self.base_model = base_model
+        self.data_dir = Path(data_dir)
+        self.models_dir = Path(models_dir)
+        self.live_dir = Path(live_dir)
+        self.reference_dir = Path(reference_dir)
+        self.retraining_dir = Path(retraining_dir)
+        self.drift_dir = Path(drift_dir)
+        self.save_artifacts = save_artifacts
+
+        self.monitor = DualDriftMonitor(auc_drop_threshold=self.config.auc_drop_threshold)
+        self.engine = StreamingBatchEngine(self.config)
+
+    def _resolve_base_model(self) -> Any:
+        if self.base_model is not None:
+            return self.base_model
+        for name in ["model.joblib", "best_model.joblib"]:
+            p = self.models_dir / name
+            if p.exists():
+                print(f"Loading production model artifact from {p}")
+                return joblib.load(p)
+        raise FileNotFoundError(
+            f"Production model artifact not found in {self.models_dir}. Run 'churn train' first."
+        )
+
+    def run(self) -> SimulationRunResults:
+        """Run the multi-week streaming simulation."""
+        base_production_model = self._resolve_base_model()
+
+        # Create output directories if saving
+        if self.save_artifacts:
+            live_feat_dir = self.live_dir / "features"
+            live_label_dir = self.live_dir / "labels"
+            live_pend_dir = self.live_dir / "pending"
+            for d in [live_feat_dir, live_label_dir, live_pend_dir,
+                      self.reference_dir, self.retraining_dir, self.drift_dir]:
+                d.mkdir(parents=True, exist_ok=True)
+        else:
+            live_feat_dir = self.live_dir / "features"
+            live_label_dir = self.live_dir / "labels"
+            live_pend_dir = self.live_dir / "pending"
+
+        # Load population
+        X = pd.read_csv(self.data_dir / "X_features.csv")
+        y = pd.read_csv(self.data_dir / "y_target.csv")
+
+        reference, population = self.engine.prepare_population_and_reference(X, y)
+
+        if self.save_artifacts:
+            reference.to_csv(self.reference_dir / "X_reference.csv", index=False)
+            reference[["customer_id", "Churn Value"]].to_csv(
+                self.reference_dir / "y_reference.csv", index=False
+            )
+
+        print(f"Population size: {len(population)}")
+        print(f"Reference set size: {len(reference)}")
+
+        weekly_batches = self.engine.build_weekly_batches(population)
+        weekly_batches = self.engine.inject_drift(weekly_batches)
+
+        master = pd.concat(weekly_batches, ignore_index=True)
+        print(f"Total weekly records (with returning duplicates): {len(master)}")
+        print(f"Unique customers: {master['customer_id'].nunique()}")
+
+        meta_cols = ["customer_id", "Churn Value", "feature_available_week", "label_release_week"]
+        feature_cols = [c for c in master.columns if c not in meta_cols]
+
+        X_ref = reference[feature_cols].copy()
+        y_ref = reference["Churn Value"].values
+
+        drift_metrics: list[dict[str, Any]] = []
+        retrained_weeks: list[int] = []
+
+        # Never-retrain baseline (fitted on pre-drift released data)
+        never_retrain_data = master[
+            master["label_release_week"] <= self.config.drift_start_week
+        ].copy()
+
+        if len(never_retrain_data) > 0:
+            X_nr = never_retrain_data[feature_cols]
+            y_nr = never_retrain_data["Churn Value"].values
+            model_never = clone(base_production_model)
+            model_never.fit(X_nr, y_nr)
+            print(f"\nNever-retrain baseline fitted on {len(never_retrain_data)} samples (weeks 1-{self.config.drift_start_week})")
+        else:
+            model_never = clone(base_production_model)
+            print("WARNING: Using base production model directly for never-retrain baseline")
+
+        model_retrain: Any | None = None
+
+        for week in range(1, self.config.n_weeks + 1):
+            print(f"\n{'='*60}")
+            print(f"SIMULATION WEEK {week}")
+            print(f"{'='*60}")
+
+            # 1. Release features for week
+            week_features = master[
+                master["feature_available_week"] == week
+            ][feature_cols + ["customer_id"]]
+
+            if self.save_artifacts:
+                week_features.to_csv(live_feat_dir / f"week_{week}_features.csv", index=False)
+                week_features.copy().to_csv(live_pend_dir / f"week_{week}_pending.csv", index=False)
+
+            # 2. Unsupervised PSI Drift Monitor
+            psi_info = self.monitor.evaluate_unsupervised_drift(
+                reference[feature_cols], week_features[feature_cols]
+            )
+            psi_mean = psi_info["psi_mean"]
+            psi_max = psi_info["psi_max"]
+            psi_status = psi_info["psi_status"]
+            print(f"  Unsupervised Drift Monitor (PSI): mean={psi_mean:.4f}, max={psi_max:.4f} [{psi_status}]")
+
+            # 3. Release delayed labels
+            release_week = week - self.config.label_delay_weeks
+            if release_week >= 1:
+                week_labels = master[
+                    master["feature_available_week"] == release_week
+                ][["customer_id", "Churn Value"]].copy()
+                if self.save_artifacts:
+                    week_labels.to_csv(live_label_dir / f"week_{release_week}_labels.csv", index=False)
+                    pending_file = live_pend_dir / f"week_{release_week}_pending.csv"
+                    if pending_file.exists():
+                        pending_file.unlink()
+                print(f"  Labels released for week {release_week}")
+
+            # 4. Check available labeled data
+            labeled_data = master[master["label_release_week"] <= week].copy()
+            n_labeled = len(labeled_data)
+            print(f"  Labeled samples available: {n_labeled}")
+
+            if n_labeled < self.config.min_labels_for_retrain:
+                print("  Not enough labeled data to train/evaluate yet.")
+                drift_metrics.append({
+                    "week": week,
+                    "n_labeled": n_labeled,
+                    "psi_mean": round(psi_mean, 4),
+                    "psi_max": round(psi_max, 4),
+                    "psi_status": psi_status,
+                    "never_retrain_auc_reference": None,
+                    "retrain_model_auc_recent": None,
+                    "retrained": False,
+                    "trigger_reason": "awaiting label release",
+                })
+                continue
+
+            X_avail = labeled_data[feature_cols]
+            y_avail = labeled_data["Churn Value"].values
+
+            # 5. Build recent live window
+            release_cutoff = week - self.config.recent_window_weeks + 1
+            recent_live = master[
+                (master["label_release_week"] >= release_cutoff) &
+                (master["label_release_week"] <= week)
+            ].copy()
+
+            if len(recent_live) > 0:
+                X_recent = recent_live[feature_cols]
+                y_recent = recent_live["Churn Value"].values
+            else:
+                X_recent = X_avail
+                y_recent = y_avail
+
+            # 6. Never-retrain baseline evaluation on static reference
+            auc_never = None
+            if model_never is not None:
+                y_never_pred = model_never.predict_proba(X_ref)[:, 1]
+                auc_never = float(roc_auc_score(y_ref, y_never_pred))
+                print(f"  Never-retrain AUC on static reference: {auc_never:.4f}")
+
+            # 7. Supervised performance decay check
+            should_retrain = False
+            trigger_reason = ""
+
+            if model_retrain is None:
+                should_retrain = True
+                trigger_reason = "initial training"
+            else:
+                y_ret_pred = model_retrain.predict_proba(X_recent)[:, 1]
+                auc_ret_recent = float(roc_auc_score(y_recent, y_ret_pred))
+                print(f"  Retrain-model AUC on recent live data: {auc_ret_recent:.4f}")
+
+                decay_triggered, reason = self.monitor.check_decay(
+                    recent_auc=auc_ret_recent,
+                    model_retrain_exists=True,
+                )
+                if decay_triggered:
+                    should_retrain = True
+                    trigger_reason = reason
+                else:
+                    print(f"  No retraining triggered (best recent AUC: {self.monitor.best_recent_auc:.4f})")
+
+            # 8. Retraining with Exponential Sample Decay
+            if should_retrain and n_labeled >= self.config.min_labels_for_retrain:
+                print(f"  RETRAINING triggered: {trigger_reason}")
+
+                sample_weights = compute_exponential_sample_weights(
+                    current_week=week,
+                    available_weeks=labeled_data["feature_available_week"],
+                    decay_rate=self.config.sample_decay_rate,
+                )
+
+                model_retrain = clone(base_production_model)
+                model_retrain.fit(X_avail, y_avail, sample_weight=sample_weights)
+
+                y_ret_pred_recent = model_retrain.predict_proba(X_recent)[:, 1]
+                auc_ret_recent = float(roc_auc_score(y_recent, y_ret_pred_recent))
+                self.monitor.update_best_auc(auc_ret_recent)
+
+                y_ret_pred_ref = model_retrain.predict_proba(X_ref)[:, 1]
+                auc_ret_ref = float(roc_auc_score(y_ref, y_ret_pred_ref))
+
+                retrained_weeks.append(week)
+                print(f"  Retrained model AUC on recent live data: {auc_ret_recent:.4f}")
+                print(f"  Retrained model AUC on static reference: {auc_ret_ref:.4f}")
+
+                if self.save_artifacts:
+                    retrain_dir = self.retraining_dir / f"week_{week}"
+                    retrain_dir.mkdir(parents=True, exist_ok=True)
+                    metrics = {
+                        "week": week,
+                        "trigger": trigger_reason,
+                        "n_labeled": n_labeled,
+                        "psi_mean": round(psi_mean, 4),
+                        "psi_max": round(psi_max, 4),
+                        "psi_status": psi_status,
+                        "sample_decay_rate": self.config.sample_decay_rate,
+                        "auc_on_recent_live": round(auc_ret_recent, 4),
+                        "auc_on_static_reference": round(auc_ret_ref, 4),
+                        "never_retrain_auc_reference": round(auc_never, 4) if auc_never is not None else None,
+                    }
+                    with open(retrain_dir / "metrics.json", "w") as f:
+                        json.dump(metrics, f, indent=2)
+                    joblib.dump(model_retrain, retrain_dir / "model.joblib")
+
+            elif model_retrain is not None:
+                y_ret_pred = model_retrain.predict_proba(X_recent)[:, 1]
+                auc_ret_recent = float(roc_auc_score(y_recent, y_ret_pred))
+                if self.monitor.best_recent_auc is not None:
+                    self.monitor.update_best_auc(max(self.monitor.best_recent_auc, auc_ret_recent))
+                else:
+                    self.monitor.update_best_auc(auc_ret_recent)
+                print(f"  Retrain-model AUC on recent live data: {auc_ret_recent:.4f}")
+
+            drift_metrics.append({
+                "week": week,
+                "n_labeled": n_labeled,
+                "psi_mean": round(psi_mean, 4),
+                "psi_max": round(psi_max, 4),
+                "psi_status": psi_status,
+                "never_retrain_auc_reference": round(auc_never, 4) if auc_never is not None else None,
+                "retrain_model_auc_recent": (
+                    round(self.monitor.best_recent_auc, 4)
+                    if self.monitor.best_recent_auc is not None
+                    else None
+                ),
+                "retrained": week in retrained_weeks,
+                "trigger_reason": trigger_reason if should_retrain else "monitoring",
+            })
+
+        drift_metrics_df = pd.DataFrame(drift_metrics)
+        if self.save_artifacts:
+            drift_metrics_df.to_csv(self.drift_dir / "drift_metrics.csv", index=False)
+
+        print(f"\n{'='*60}")
+        print("SIMULATION COMPLETE")
+        print(f"{'='*60}")
+        print(f"Retraining triggered at weeks: {retrained_weeks}")
+        if self.save_artifacts:
+            print(f"Metrics saved to {self.drift_dir / 'drift_metrics.csv'}")
+            print(f"Retraining artifacts in {self.retraining_dir}")
+
+        if not drift_metrics_df.empty:
+            print("\nDrift Metrics Summary:")
+            print(drift_metrics_df.to_string(index=False))
+
+        return SimulationRunResults(
+            drift_metrics=drift_metrics_df,
+            retrained_weeks=retrained_weeks,
+            final_never_retrain_auc=auc_never,
+            final_retrain_auc_recent=self.monitor.best_recent_auc,
+            artifacts_saved=self.save_artifacts,
+        )

@@ -14,3 +14,8 @@ wheels/
 
 # Model artifacts and outputs
 models/
+
+# MLflow Experiment Tracking
+mlruns/
+*.db
+*.joblib
