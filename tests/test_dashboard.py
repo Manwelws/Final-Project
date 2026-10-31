@@ -197,3 +197,65 @@ def test_drift_monitor_components() -> None:
     assert "Sample Decay" in fig_decay.layout.title.text
 
 
+def test_retention_triage_components() -> None:
+    """Verify customer triage presets, scoring, risk gauge, SHAP bars, and recommendations."""
+    from final_project.dashboard.pages.retention_triage import (
+        CUSTOMER_PRESETS,
+        get_preset_profile,
+        score_customer_profile,
+        generate_risk_gauge,
+        generate_attribution_bar_chart,
+        generate_retention_recommendations,
+    )
+    from final_project.explainability import explain_customer_instance
+    from final_project.dashboard.state import load_model_bundle
+
+    # 1. Presets retrieval
+    assert "High Risk New Customer" in CUSTOMER_PRESETS
+    assert "Loyal Long-Term Customer" in CUSTOMER_PRESETS
+    high_risk_preset = get_preset_profile("High Risk New Customer")
+    loyal_preset = get_preset_profile("Loyal Long-Term Customer")
+    assert high_risk_preset["contract"] == "Month-to-month"
+    assert loyal_preset["contract"] == "Two year"
+
+    # 2. Score Customer Profile
+    bundle = load_model_bundle("models")
+    prob_hi, pred_hi, tier_hi, cutoff_hi, df_hi = score_customer_profile(high_risk_preset, bundle=bundle)
+    assert 0.0 <= prob_hi <= 1.0
+    assert prob_hi >= cutoff_hi
+    assert pred_hi == 1
+    assert tier_hi in ("Medium", "High")
+    assert df_hi.shape == (1, 27)
+
+    prob_lo, pred_lo, tier_lo, cutoff_lo, df_lo = score_customer_profile(loyal_preset, bundle=bundle)
+    assert prob_lo < cutoff_lo
+    assert pred_lo == 0
+    assert tier_lo == "Low"
+
+    # 3. Speedometer Risk Gauge
+    fig_gauge_hi = generate_risk_gauge(prob_hi, threshold=cutoff_hi)
+    assert len(fig_gauge_hi.data) == 1
+    assert fig_gauge_hi.data[0].type == "indicator"
+    assert fig_gauge_hi.data[0].value == round(prob_hi * 100, 1)
+
+    fig_gauge_lo = generate_risk_gauge(prob_lo, threshold=cutoff_lo)
+    assert fig_gauge_lo.data[0].gauge.bar.color == "#10B981"
+
+    # 4. Explainability & Signed SHAP Attribution Chart
+    explanation = explain_customer_instance(bundle.model, df_hi)
+    assert len(explanation.risk_drivers) > 0
+    fig_attrib = generate_attribution_bar_chart(explanation.risk_drivers, explanation.protective_factors)
+    assert len(fig_attrib.data) == 1
+    assert fig_attrib.data[0].type == "bar"
+
+    # 5. Contextual Retention Recommendations
+    recs = generate_retention_recommendations(high_risk_preset, explanation.risk_drivers)
+    assert len(recs) >= 1
+    assert any("Contract" in r["strategy"] or "Commitment" in r["strategy"] for r in recs)
+    for r in recs:
+        assert "priority" in r
+        assert "action" in r
+        assert "expected_impact" in r
+
+
+
