@@ -15,6 +15,8 @@ from final_project.drift import (
     compute_exponential_sample_weights,
 )
 from final_project.domain.policies import DriftPolicy, RetrainingPolicy
+from final_project.data import load_features_and_target
+
 
 
 @dataclass
@@ -231,11 +233,12 @@ class SimulationRunner:
             live_label_dir = self.live_dir / "labels"
             live_pend_dir = self.live_dir / "pending"
 
-        # Load population
-        X = pd.read_csv(self.data_dir / "X_features.csv")
-        y = pd.read_csv(self.data_dir / "y_target.csv")
+        # Load population using authoritative loader
+        X, y_series = load_features_and_target(self.data_dir)
+        y = pd.DataFrame({"Churn Value": y_series})
 
         reference, population = self.engine.prepare_population_and_reference(X, y)
+
 
         if self.save_artifacts:
             reference.to_csv(self.reference_dir / "X_reference.csv", index=False)

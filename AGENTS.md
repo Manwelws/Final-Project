@@ -32,8 +32,9 @@ Retraining triggers at weeks 3 (initial) and 7 (performance decay: recent AUC 0.
 ## Repo layout
 - `notebooks/cleaning_for_retraining.ipynb` — cleaning notebook (complete, verified)
 - `notebooks/simulate_retraining.py` — simulator script (the main entrypoint)
-- `projects.md` — project overview (Project 1 = this churn project)
-- `src/final_project/__init__.py` — stub `main()` only
+- `docs/Human/projects.md` — project overview (Project 1 = this churn project)
+- `src/final_project/__init__.py` — package entrypoints
+
 - `src/final_project/kodeagnt` — scratch/experimental CodeActAgent snippet, **not** part of the pipeline
 - `README.md` — empty
 

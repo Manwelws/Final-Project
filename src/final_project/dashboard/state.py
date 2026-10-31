@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from final_project.data import load_features_and_target
+from final_project.evaluation import compute_metrics_at_threshold
 from final_project.registry import ModelBundle
 from final_project.domain.cost import CostMatrix
 
@@ -18,21 +20,12 @@ from final_project.domain.cost import CostMatrix
 def load_clean_dataset(data_dir: str = "data/processed") -> tuple[pd.DataFrame, pd.Series, pd.DataFrame | None]:
     """Load cleaned numeric features, churn target, and full cleaned dataframe."""
     base = Path(data_dir)
-    x_path = base / "X_features.csv"
-    y_path = base / "y_target.csv"
     full_path = base / "Telco_customer_churn_cleaned.csv"
 
-    if not x_path.exists() or not y_path.exists():
-        raise FileNotFoundError(f"Authoritative dataset files missing from {data_dir}")
-
-    X = pd.read_csv(x_path)
-    y_df = pd.read_csv(y_path)
-    # y may have column 'Churn Value' or first column
-    target_col = "Churn Value" if "Churn Value" in y_df.columns else y_df.columns[0]
-    y = y_df[target_col]
-
+    X, y = load_features_and_target(base)
     full_df = pd.read_csv(full_path) if full_path.exists() else None
     return X, y, full_df
+
 
 
 @st.cache_resource(show_spinner=False)
@@ -89,35 +82,30 @@ def calculate_confusion_at_cutoff(
 ) -> dict[str, Any]:
     """Calculate confusion metrics, rates, and business cost for a given decision cutoff."""
     cost_matrix = cost_matrix or CostMatrix()
-    y_pred = (y_prob >= cutoff).astype(int)
+    m = compute_metrics_at_threshold(
+        y_true=y_true,
+        y_probs=y_prob,
+        threshold=cutoff,
+        cost_fn=cost_matrix.cost_fn,
+        cost_fp=cost_matrix.cost_fp,
+    )
 
-    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
-    fp = int(np.sum((y_true == 0) & (y_pred == 1)))
-    tn = int(np.sum((y_true == 0) & (y_pred == 0)))
-    fn = int(np.sum((y_true == 1) & (y_pred == 0)))
-
-    total_positives = tp + fn
-    total_negatives = tn + fp
-
-    recall = tp / total_positives if total_positives > 0 else 0.0
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    fpr = fp / total_negatives if total_negatives > 0 else 0.0
-    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-
-    total_cost = cost_matrix.total_cost(fn=fn, fp=fp)
+    total_negatives = m.tn + m.fp
+    fpr = m.fp / total_negatives if total_negatives > 0 else 0.0
 
     return {
         "cutoff": cutoff,
-        "tp": tp,
-        "fp": fp,
-        "tn": tn,
-        "fn": fn,
-        "recall": recall,
-        "precision": precision,
+        "tp": m.tp,
+        "fp": m.fp,
+        "tn": m.tn,
+        "fn": m.fn,
+        "recall": m.recall,
+        "precision": m.precision,
         "fpr": fpr,
-        "f1": f1,
-        "total_cost": total_cost,
+        "f1": m.f1,
+        "total_cost": m.cost,
     }
+
 
 
 def compute_holdout_financial_impact(
