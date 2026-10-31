@@ -18,3 +18,8 @@ class CostMatrix:
     def compute_loss(self, fn: int, fp: int) -> float:
         """Calculate total business loss given false negatives and false positives."""
         return float(self.cost_fn * fn + self.cost_fp * fp)
+
+    def total_cost(self, fn: int, fp: int) -> float:
+        """Alias for compute_loss."""
+        return self.compute_loss(fn, fp)
+
