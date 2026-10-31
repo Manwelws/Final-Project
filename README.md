@@ -34,74 +34,499 @@ ChurnOps bridges advanced data science modeling and executive financial decision
 
 ---
 
-## 🏛️ System Architecture
+## 📐 Architecture & Engineering Diagrams
+
+The system architecture, data flows, execution sequences, state machines, and deployment topologies specified in the engineering plan are modeled below in native Mermaid format:
+
+### Figure 1: High-Level System Architecture & 4-Stage Layered Component Topology
+
+```mermaid
+flowchart LR
+    subgraph DataLayer["1. DATA LAYER"]
+        RAW["Raw Telco CSV\n(7,043 rows × 33 cols)"]
+        NOTEBOOK["Cleaning Pipeline\n(cleaning_for_retraining.ipynb)"]
+        CLEAN["Cleaned Dataset\n(X_features: 7043×27, y_target)"]
+        STREAM["Reference & Live Stream\n(Baseline Holdout & Weeks 1–8)"]
+        RAW --> NOTEBOOK --> CLEAN --> STREAM
+    end
+
+    subgraph TrainLayer["2. TRAINING & EVALUATION LAYER"]
+        FACTORY["Candidate Model Factory\n(RF, LightGBM, XGBoost)"]
+        WEIGHTS["Imbalance Strategy\n(Native Class Weights / pos_wt)"]
+        OPTUNA["Bayesian Optimization\n(Optuna TPE + MedianPruner)"]
+        MLFLOW[("MLflow Tracking Hub\n./mlruns Store")]
+        EVAL["Cost-Utility Evaluation\n(C_FN=$200, C_FP=$20 -> Cutoff 0.12)"]
+        SHAP["SHAP Explainability\n(Parent Domain Aggregation)"]
+
+        FACTORY --> WEIGHTS --> OPTUNA
+        OPTUNA <--> MLFLOW
+        OPTUNA --> EVAL --> SHAP
+    end
+
+    subgraph ServingLayer["3. SERVING & DEPLOYMENT LAYER"]
+        REGISTRY[("Model Artifact Registry\nmodels/model.joblib\nmodels/metadata.json")]
+        API["FastAPI REST Microservice\n(:8000 /health, /predict, /explain)"]
+        DOCKER["Docker Containerization\n(python:3.14-slim, Non-Root appuser)"]
+
+        REGISTRY --> API --> DOCKER
+    end
+
+    subgraph OpsLayer["4. MLOps & BI RETRAINING LOOP (ADR 0001)"]
+        DASH["Streamlit Operations Dashboard\n(:8501 5 Interactive Pages)"]
+        DRIFT["Unsupervised PSI Monitor\n(Weekly Feature Population Shift)"]
+        DECAY["Supervised Decay Trigger\n(Rolling 2-Week Live AUC Drop > 0.05)"]
+        SIM["Closed-Loop Retraining Engine\n(Exponential Decay Weight: 0.85^weeks)"]
+
+        DRIFT --> SIM
+        DECAY --> SIM
+    end
+
+    CLEAN --> FACTORY
+    EVAL --> REGISTRY
+    STREAM --> DRIFT
+    STREAM --> DECAY
+    REGISTRY --> DASH
+    REGISTRY -.->|prior model| SIM
+    SIM ==>|promotes retrained model artifact| REGISTRY
+    API -.->|live frontline scoring| DASH
+
+    style DataLayer fill:#0B1120,stroke:#3B82F6,color:#F9FAFB
+    style TrainLayer fill:#064E3B,stroke:#10B981,color:#F9FAFB
+    style ServingLayer fill:#4C1D95,stroke:#8B5CF6,color:#F9FAFB
+    style OpsLayer fill:#1E1B4B,stroke:#EC4899,color:#F9FAFB
+```
+
+---
+
+### Figure 2: System Actor & Use Case Model Across Roles
+
+```mermaid
+flowchart LR
+    subgraph OperationalActors["Operational Actors"]
+        CLIENT["Client App / Webhook"]
+        FRONT["Frontline Retention Agent"]
+        SCHED["Weekly Scheduler / CI"]
+    end
+
+    subgraph SystemBoundary["ChurnOps Prediction & Retraining System Boundary"]
+        UC1["Predict Churn Risk (Single Customer)\n[POST /predict]"]
+        UC2["Batch Score Customers\n[POST /predict/batch]"]
+        UC3["Explain Prediction (SHAP Triage)\n[POST /explain]"]
+        UC4["Explore Data & Diagnostics\n[EDA Notebook & Dashboard]"]
+        UC5["Benchmark Candidate Models\n[churn benchmark]"]
+        UC6["Tune Hyperparameters (Optuna + MLflow)\n[churn train --tune]"]
+        UC7["Evaluate Model & Optimize Threshold\n[churn evaluate (cutoff 0.12)]"]
+        UC8["Monitor Feature Drift (PSI)\n[Unsupervised Live Monitor]"]
+        UC9["Detect Performance Decay & Retrain\n[ADR 0001 Retraining Simulator]"]
+        UC10["View Executive KPIs & Financial ROI\n[Streamlit Operations Dashboard]"]
+    end
+
+    subgraph AnalyticalActors["Analytical & Engineering Actors"]
+        DS["Data Scientist / ML Engineer"]
+        EXEC["Business Analyst / Executive"]
+    end
+
+    CLIENT --> UC1
+    CLIENT --> UC3
+    SCHED --> UC2
+    SCHED --> UC8
+    SCHED --> UC9
+    FRONT --> UC1
+    FRONT --> UC3
+    FRONT --> UC10
+
+    DS --> UC4
+    DS --> UC5
+    DS --> UC6
+    DS --> UC7
+    DS --> UC9
+    EXEC --> UC7
+    EXEC --> UC10
+
+    UC1 -.->|«extends»| UC3
+    UC5 -.->|«includes»| UC6
+    UC7 -.->|«includes»| UC10
+
+    style OperationalActors fill:#0B1120,stroke:#3B82F6,color:#F9FAFB
+    style SystemBoundary fill:#111827,stroke:#6B7280,color:#F9FAFB
+    style AnalyticalActors fill:#064E3B,stroke:#10B981,color:#F9FAFB
+```
+
+---
+
+### Figure 3: End-to-End Data Processing, Splitting & Benchmarking Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Stage1["1. Source"]
+        RAW["Telco Customer Churn\nRaw Dataset\n(7,043 × 33)"]
+    end
+
+    subgraph Stage2["2. Processing"]
+        CLEAN_STEP["Cleaning & Imputation\nDrop Leakage IDs\nOne-Hot Encode Categoricals"]
+        FEAT["X_features.csv\n(7,043 × 27 numeric, 0 NaNs)"]
+        TARG["y_target.csv\n(5,174 retain / 1,869 churn)"]
+        RAW --> CLEAN_STEP --> FEAT & TARG
+    end
+
+    subgraph Stage3["3. Split & Weight"]
+        SPLIT["Stratified 80/20 Split\n(5,634 Train / 1,409 Test)"]
+        PROD_WEIGHT["[PRODUCTION]\nNative Algorithmic Class Weights\n(balanced / scale_pos_weight)"]
+        STUDY_SMOTE["[STUDY ONLY - EXCLUDED]\nSMOTE Oversampling\n(Distorts sparse one-hot space)"]
+        FEAT & TARG --> SPLIT
+        SPLIT ==> PROD_WEIGHT
+        SPLIT -.-> STUDY_SMOTE
+    end
+
+    subgraph Stage4["4. Model Suite"]
+        LGBM["#1 LightGBM Classifier\n(ROC-AUC: 0.8528 ± 0.0104)"]
+        XGB["#2 XGBoost Classifier\n(ROC-AUC: 0.8492 ± 0.0118)"]
+        RF["#3 Random Forest Classifier\n(ROC-AUC: 0.8474 ± 0.0107)"]
+        BASELINES["Linear / SVM / Dummy Baselines\n(ROC-AUC: 0.76–0.81)"]
+        PROD_WEIGHT --> LGBM & XGB & RF
+        STUDY_SMOTE -.-> BASELINES
+    end
+
+    subgraph Stage5["5. Outputs"]
+        ARTIFACT["Production Model Artifact\nmodels/model.joblib\nmodels/metadata.json (Cutoff: 0.12)"]
+        EVAL_REPORTS["Holdout Evaluation & SHAP Reports\n(5 Diagnostic Curves & 6 SHAP Plots)"]
+        MLFLOW_RUNS[("MLflow Tracking Hub\n./mlruns Store")]
+        LGBM & XGB & RF --> ARTIFACT & EVAL_REPORTS & MLFLOW_RUNS
+    end
+
+    style Stage1 fill:#0B1120,stroke:#3B82F6,color:#F9FAFB
+    style Stage2 fill:#111827,stroke:#6B7280,color:#F9FAFB
+    style Stage3 fill:#064E3B,stroke:#10B981,color:#F9FAFB
+    style Stage4 fill:#1E1B4B,stroke:#6366F1,color:#F9FAFB
+    style Stage5 fill:#4C1D95,stroke:#8B5CF6,color:#F9FAFB
+```
+
+---
+
+### Figure 4: Exploratory Data Analysis (EDA) 8-Stage Execution Flow & Validation Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Row1["Row 1: Exploration, Profiling & Collinearity Audit"]
+        S1["1. Load Dataset\n7,043 × 33 raw\nInspect dtypes & nulls"]
+        S2["2. Target Balance\n5,174 Retained (73.5%)\n1,869 Churned (26.5%)\n2.77:1 Imbalance Ratio"]
+        S3["3. Feature Distributions\n27 numeric features\nHistograms & KDEs\nStratified by churn"]
+        S4["4. Correlations\nFull matrix heatmap\nTop-10 correlation pairs\nCollinearity audit"]
+        S1 --> S2 --> S3 --> S4
+    end
+
+    subgraph Row2["Row 2: Cohorts, Imbalance Strategy & Artifact Export"]
+        S5["5. Bivariate Cohorts\nChurn by Contract\nTenure & Internet tier\nCohort retention curves"]
+        S6["6. Imbalance Strategy Audit\nClass Weighting vs SMOTE\nIdentified SMOTE distortion\nin sparse dummy space"]
+        S7["7. Statistical Tests\nPoint-Biserial (continuous)\nChi-Square (categorical)\nFeature ranking p < 0.001"]
+        S8["8. Export Artifacts\nX_features.csv (7,043 × 27)\ny_target.csv (0 NaNs)\nSaved to data/processed/"]
+        S5 --> S6 --> S7 --> S8
+    end
+
+    S4 ==>|Serpentine Flow| S5
+
+    style Row1 fill:#0B1120,stroke:#3B82F6,color:#F9FAFB
+    style Row2 fill:#064E3B,stroke:#10B981,color:#F9FAFB
+```
+
+---
+
+### Figure 5: Dual-Strategy Benchmark, Optuna Bayesian Tuning & MLflow Logging Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor DS as Data Scientist / CLI
+    participant DL as DataLoader (final_project.data)
+    participant TP as TrainPipeline (final_project.pipeline)
+    participant OPT as Optuna Tuner (final_project.tuning)
+    participant MLF as MLflow Store (./mlruns)
+    participant EV as Evaluator (final_project.evaluation)
+    participant REG as ModelRegistry (final_project.registry)
+
+    DS->>DL: 1. load_features_and_target("data/processed")
+    DL-->>DS: X_features (7,043 × 27), y_target
+    DS->>DL: 2. get_stratified_split(X, y, test_size=0.20)
+    DL-->>DS: X_train (5,634), X_test (1,409), y_train, y_test
+
+    rect rgb(30, 41, 59)
+        Note over DS,MLF: Strategy A: SMOTE Oversampling Benchmark (Evaluated & Excluded)
+        DS->>TP: 3. benchmark_smote_baseline(X_train, y_train)
+        TP->>MLF: 4. log_metrics(smote_runs, cv_auc=0.835)
+        Note over TP,MLF: Distorts categorical binary distributions; discarded for production
+    end
+
+    rect rgb(6, 78, 59)
+        Note over DS,REG: Strategy B: Native Class Weights + Optuna Bayesian Optimization [PRODUCTION]
+        DS->>OPT: 5. run_optuna_study(n_trials=50, candidates=[RF, LGBM, XGB])
+        loop 50 Bayesian Trials
+            OPT->>OPT: sample hyperparameters (TPESampler)
+            OPT->>MLF: log_params(trial_params), log_metrics(fold_auc)
+            opt Intermediate validation below threshold
+                OPT->>OPT: prune trial early (MedianPruner)
+                OPT->>MLF: set_tag("status", "PRUNED")
+            end
+        end
+        OPT-->>DS: Best trial: LightGBM (CV ROC-AUC: 0.8528 ± 0.0104)
+        DS->>EV: 6. evaluate_model(best_model, X_test, y_test, cost_fn=200, cost_fp=20)
+        EV-->>DS: Optimal Cutoff = 0.12 (Loss: $14,880 vs $36,740; Net Savings: $21,860)
+        DS->>REG: 7. ModelBundle.save("models", model, metadata)
+        DS->>EV: 8. generate_evaluation_report() & generate_shap_plots()
+        EV-->>DS: Markdown report & diagnostic figures saved to reports/
+    end
+```
+
+---
+
+### Figure 6: Data, Training, Evaluation, Explainability & Model Registry Class Architecture (UML)
+
+```mermaid
+classDiagram
+    class DataLoader {
+        +load_features_and_target(data_dir: Path) tuple[DataFrame, Series]
+        +get_stratified_split(X: DataFrame, y: Series, test_size: float, seed: int) tuple
+        +load_and_split_data(features_path, target_path, test_size, seed) DataSplit
+    }
+
+    class CandidateFactory {
+        +build_candidate_models(balanced: bool, seed: int) dict[str, BaseEstimator]
+        +benchmark_candidates(X_train: DataFrame, y_train: Series, cv_folds: int) DataFrame
+    }
+
+    class TuningAndPipeline {
+        +run_optuna_study(X_train, y_train, n_trials: int, cv_folds: int) TuningResult
+        +run_training(data_dir, output_dir, algorithm, balanced, tune, n_trials) TrainingSummary
+    }
+
+    class ModelMetadata {
+        +timestamp: str
+        +algorithm: str
+        +balanced: bool
+        +optimal_threshold: float
+        +cost_savings: float
+        +holdout_roc_auc: float
+        +holdout_pr_auc: float
+        +features: list[str]
+        +load(path: Path) ModelMetadata
+        +save(path: Path) None
+    }
+
+    class ModelBundle {
+        +model: BaseEstimator
+        +metadata: ModelMetadata
+        +load(model_dir: Path) ModelBundle
+        +save(model_dir: Path) None
+        +predict_risk(X: DataFrame) RiskPrediction
+        +predict_proba(X: DataFrame) ndarray
+        +predict(X: DataFrame) ndarray
+    }
+
+    class CostMatrix {
+        +cost_fn: float = 200.0
+        +cost_fp: float = 20.0
+        +compute_cost(tp, fp, tn, fn) float
+    }
+
+    class Evaluator {
+        +compute_metrics_at_threshold(y_true, y_probs, threshold, cost_fn, cost_fp) ThresholdMetrics
+        +find_optimal_threshold(y_true, y_probs, cost_matrix) tuple[float, DataFrame]
+        +evaluate_model(model, X_test, y_test, cost_matrix) EvaluationSummary
+        +run_evaluation(data_dir, model_path, metadata_path, report_dir) EvaluationSummary
+    }
+
+    class SHAPExplainer {
+        +explain_customer_instance(model, customer_features) CustomerExplanation
+        +aggregate_shap_by_parent(shap_values, feature_names) DataFrame
+        +run_explanation(data_dir, model_path, output_dir, max_samples) ExplanationResult
+    }
+
+    class DriftMonitor {
+        +calculate_psi(reference: ndarray, current: ndarray, n_bins: int) float
+        +compute_dataset_psi(ref_df: DataFrame, curr_df: DataFrame) dict
+        +compute_sample_weights(n_weeks: int, decay_rate: float) ndarray
+        +StreamingBatchEngine
+    }
+
+    class ServingService {
+        +app: FastAPI
+        +predict_single(request: CustomerPredictionRequest) SinglePredictionResponse
+        +predict_batch(requests: list) BatchPredictionResponse
+        +explain_single(request: CustomerPredictionRequest) CustomerExplanationResponse
+        +health_check() HealthResponse
+    }
+
+    class DashboardRouter {
+        +main()
+        +render_kpi_overview_page()
+        +render_model_diagnostics_page()
+        +render_drift_monitor_page()
+        +render_retention_triage_page()
+        +render_experiment_hub_page()
+    }
+
+    DataLoader --> CandidateFactory : provides training splits
+    CandidateFactory --> TuningAndPipeline : candidate estimators
+    TuningAndPipeline --> ModelBundle : packages best model
+    ModelBundle *-- ModelMetadata : contains typed metadata
+    ModelBundle --> Evaluator : scored on holdout
+    CostMatrix --> Evaluator : optimizes cutoff
+    ModelBundle --> SHAPExplainer : explains predictions
+    ModelBundle --> DriftMonitor : monitors live drift
+    ModelBundle --> ServingService : serves REST requests
+    ModelBundle --> DashboardRouter : visualizes system state
+```
+
+---
+
+### Figure 7: Closed-Loop Retraining Decision State Machine (ADR 0001 Verified)
+
+```mermaid
+stateDiagram-v2
+    [*] --> UnlabeledBatchArrival: Week N Features Stream Arrives
+
+    state UnlabeledBatchArrival {
+        [*] --> IngestWeeklyFeatures
+        IngestWeeklyFeatures --> ComputeWeeklyPSI: Against Static Reference (data/reference/)
+    }
+
+    UnlabeledBatchArrival --> UnsupervisedDriftGate
+
+    state UnsupervisedDriftGate {
+        [*] --> EvaluatePSI
+        EvaluatePSI --> PSI_Stable: PSI < 0.10 (Routine)
+        EvaluatePSI --> PSI_Moderate: 0.10 <= PSI < 0.25 (Warning)
+        EvaluatePSI --> PSI_Severe: PSI >= 0.25 (Drift Alert Flagged)
+    }
+
+    UnsupervisedDriftGate --> PendingLabelQueue: Wait 2-Week Operational Label Lag
+
+    state PendingLabelQueue {
+        [*] --> HoldInPending: data/live/pending/
+        HoldInPending --> ReleaseLabels: Week N+2 Arrives (Churn Labels Confirmed)
+    }
+
+    PendingLabelQueue --> SupervisedPerformanceGate: Evaluate Live Rolling AUC
+
+    state SupervisedPerformanceGate {
+        [*] --> ComputeLiveAUC: Rolling 2-Week Window
+        ComputeLiveAUC --> PerformanceHealthy: live_auc >= best_auc - 0.05
+        ComputeLiveAUC --> PerformanceDecay: live_auc < best_auc - 0.05 (Retrain Triggered!)
+    }
+
+    PerformanceHealthy --> LogMetricsToDriftCSV: Log to data/drift/drift_metrics.csv
+    PerformanceDecay --> RetrainingEngine: Initiate Automated Retraining Execution
+
+    state RetrainingEngine {
+        [*] --> ApplyExponentialWeighting: w = 0.85^(weeks_old)
+        ApplyExponentialWeighting --> FitCandidatePipeline: Fit Production Model with Sample Weights
+        FitCandidatePipeline --> ValidateOnReferenceAndLive: Verify Reference AUC >= 0.84 & Live AUC Recovery
+        ValidateOnReferenceAndLive --> ExportRetrainedArtifacts: Export to data/retraining/week_N/
+    }
+
+    RetrainingEngine --> PromoteActiveModel: Overwrite models/model.joblib & metadata.json
+    PromoteActiveModel --> LogMetricsToDriftCSV: Update best_recent_auc benchmark
+    LogMetricsToDriftCSV --> [*]: Ready for Week N+1 Batch
+```
+
+---
+
+### Figure 8: FastAPI Request Validation, Prediction, Real-Time SHAP Attribution & Health Check Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Client / Frontline App / Browser
+    participant API as FastAPI Router (serving/api.py)
+    participant VAL as Pydantic v2 Validator (serving/schemas.py)
+    participant ADP as Adapter (serving/adapter.py)
+    participant BND as ModelBundle (models/model.joblib)
+    participant SHAP as TreeExplainer (explainability.py)
+
+    Note over Client,SHAP: 1. Health & Readiness Verification
+    Client->>API: GET /health
+    API->>BND: verify model loaded & inspect optimal threshold
+    API-->>Client: 200 OK {"status": "healthy", "algorithm": "RandomForestClassifier", "optimal_threshold": 0.12}
+
+    Note over Client,SHAP: 2. Single Customer Scoring & Decisioning
+    Client->>API: POST /predict {"Contract": "Month-to-month", "Monthly Charges": 89.5, ...}
+    API->>VAL: validate input schema (CustomerProfileRaw / Vector)
+    alt Validation Error
+        VAL-->>API: 422 Unprocessable Entity (Missing/Invalid fields)
+        API-->>Client: 422 Response with validation error breakdown
+    else Schema Valid
+        API->>ADP: encode_raw_profile(profile) -> 1x27 numeric DataFrame
+        ADP-->>API: encoded_df
+        API->>BND: bundle.predict_risk(encoded_df)
+        BND-->>API: RiskPrediction(prob=0.83, pred=1, tier="High", threshold=0.12)
+        API-->>Client: 200 OK {"churn_probability": 0.83, "churn_prediction": 1, "risk_tier": "High", "threshold_applied": 0.12}
+    end
+
+    Note over Client,SHAP: 3. Real-Time Frontline Retention SHAP Triage
+    Client->>API: POST /explain {"profile": {...}}
+    API->>ADP: encode_raw_profile(profile)
+    ADP-->>API: encoded_df
+    API->>SHAP: explain_customer_instance(bundle.model, encoded_df)
+    SHAP->>SHAP: compute TreeExplainer SHAP values & group one-hot features to parent domains
+    SHAP-->>API: CustomerExplanation(risk_drivers, protective_factors, base_value, prob)
+    API-->>Client: 200 OK {"risk_drivers": [["Tenure Months", +0.114], ["Contract", +0.112]], "protective_factors": [["Multiple Lines", -0.031]]}
+
+    Note over Client,SHAP: 4. High-Throughput Batch Scoring
+    Client->>API: POST /predict/batch [{"profile": {...}}, {"profile": {...}}]
+    API->>ADP: vectorized batch encoding
+    API->>BND: bundle.predict_risk(batch_df)
+    API-->>Client: 200 OK {"predictions": [...], "count": N}
+```
+
+---
+
+### Figure 9: Multi-Stage Docker Container & Volume Deployment Topology (Milestone 3 & 4)
 
 ```mermaid
 flowchart TB
-    subgraph DataLayer["1. Data & Preprocessing Layer"]
-        RAW[("Raw Excel Dataset\n7,043 × 33")]
-        CLEAN[("Cleaned Numeric Features\nX_features.csv + y_target.csv\n7,043 × 27")]
-        STREAM[("Streaming Weekly Batches\ndata/live/features & labels\n2-Week Label Lag")]
+    subgraph Clients["External Clients & Consumers"]
+        REST_CLIENT["REST API Consumer\n(Postman / Webhooks / cURL)\nhttp://localhost:8000"]
+        BROWSER_USER["Frontline Retention Agents & Executives\n(Web Browser)\nhttp://localhost:8501"]
     end
 
-    subgraph PipelineLayer["2. Pipeline & Model Optimization Layer"]
-        BENCH["Candidate Benchmark\nLightGBM, XGBoost, Random Forest"]
-        OPTUNA["Bayesian Optimization\nOptuna TPE + MedianPruner"]
-        MLFLOW[("MLflow Tracking Hub\n./mlruns")]
-        EVAL["Cost-Utility Evaluation\nOptimal Cutoff: 0.12"]
-        EXPLAIN["SHAP Explainability\nParent Domain Feature Grouping"]
-        REGISTRY[("Model Artifact Registry\nmodels/model.joblib + metadata.json")]
+    subgraph DockerHost["Production Docker Host / Cloud VM Environment"]
+        subgraph DockerCompose["docker-compose.yml Runtime Network (bridge)"]
+            subgraph ChurnService["Container 1: churn-service (:8000)"]
+                APPUSER_API["User: appuser (non-root UID 1000)"]
+                FASTAPI_APP["FastAPI Application\n(final_project.serving.api)"]
+                UVICORN["Uvicorn ASGI Server (:8000)"]
+                HEALTH["HEALTHCHECK Probe\n(curl -f http://localhost:8000/health)"]
+                APPUSER_API --> UVICORN --> FASTAPI_APP
+                HEALTH -.->|probes every 30s| UVICORN
+            end
+
+            subgraph DashboardService["Container 2: dashboard (:8501)"]
+                APPUSER_DASH["User: appuser (non-root UID 1000)"]
+                STREAMLIT["Streamlit Operations Dashboard\n(5 Interactive Pages)"]
+                APPUSER_DASH --> STREAMLIT
+            end
+        end
+
+        subgraph PersistentVolumes["Host Mounted Storage Volumes"]
+            VOL_MODELS[("./models/\n(Read-Only Artifact Mount)\nmodel.joblib, metadata.json")]
+            VOL_DATA[("./data/ & ./reports/\n(Processed Data, Baseline, Live Batches, Plots)")]
+            VOL_MLRUNS[("./mlruns/\n(MLflow Experiment & Trial Tracking Store)")]
+        end
     end
 
-    subgraph SimulationLayer["3. Streaming Retraining Engine (ADR 0001)"]
-        SIM["Streaming Simulator\nsimulate_retraining.py"]
-        PSI_MON["Unsupervised Drift Monitor\nPopulation Stability Index (PSI)"]
-        DECAY_TRIG["Supervised Performance Trigger\nRolling 2-Week Live AUC Decay"]
-        EXP_SAMPLE["Exponential Sample Decay\nWeight: 0.85^weeks_old"]
-    end
+    REST_CLIENT -->|HTTP :8000| UVICORN
+    BROWSER_USER -->|HTTP :8501| STREAMLIT
 
-    subgraph ServingLayer["4. Production Serving & Containerization"]
-        API["FastAPI REST Service\n/health, /predict, /predict/batch, /explain"]
-        DOCKER["Docker Deployment\nDockerfile + docker-compose.yml"]
-    end
+    STREAMLIT -.->|internal REST triage requests| UVICORN
+    VOL_MODELS ==>|ro mount| ChurnService & DashboardService
+    VOL_DATA ==>|rw mount| DashboardService
+    VOL_MLRUNS ==>|rw mount| DashboardService
 
-    subgraph DashboardLayer["5. Operations Dashboard (Streamlit)"]
-        DASH["ChurnOps Dashboard\n5 Dedicated Pages"]
-        P1["Page 1: Executive KPI & Economics"]
-        P2["Page 2: Benchmark & Diagnostics"]
-        P3["Page 3: Drift Timeline & PSI Heatmap"]
-        P4["Page 4: Retention Scoring & Triage"]
-        P5["Page 5: MLflow Experiment Hub"]
-    end
-
-    RAW --> CLEAN
-    CLEAN --> BENCH
-    BENCH --> OPTUNA
-    OPTUNA <--> MLFLOW
-    OPTUNA --> EVAL
-    EVAL --> EXPLAIN
-    EVAL --> REGISTRY
-    REGISTRY --> SIM
-    CLEAN --> STREAM
-    STREAM --> SIM
-    SIM --> PSI_MON
-    SIM --> DECAY_TRIG
-    DECAY_TRIG --> EXP_SAMPLE
-    REGISTRY --> API
-    API --> DOCKER
-    REGISTRY --> DASH
-    DASH --> P1
-    DASH --> P2
-    DASH --> P3
-    DASH --> P4
-    DASH --> P5
-    API -.->|live scoring| P4
-
-    style DataLayer fill:#0B1120,stroke:#3B82F6,color:#F9FAFB
-    style PipelineLayer fill:#064E3B,stroke:#10B981,color:#F9FAFB
-    style SimulationLayer fill:#1E1B4B,stroke:#6366F1,color:#F9FAFB
-    style ServingLayer fill:#4C1D95,stroke:#8B5CF6,color:#F9FAFB
-    style DashboardLayer fill:#4A044E,stroke:#EC4899,color:#F9FAFB
+    style Clients fill:#0B1120,stroke:#3B82F6,color:#F9FAFB
+    style DockerHost fill:#111827,stroke:#4B5563,color:#F9FAFB
+    style DockerCompose fill:#1E1B4B,stroke:#8B5CF6,color:#F9FAFB
+    style ChurnService fill:#064E3B,stroke:#10B981,color:#F9FAFB
+    style DashboardService fill:#4A044E,stroke:#EC4899,color:#F9FAFB
+    style PersistentVolumes fill:#1F2937,stroke:#F59E0B,color:#F9FAFB
 ```
 
 ---
