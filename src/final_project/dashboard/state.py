@@ -74,6 +74,42 @@ def load_retraining_logs(retrain_dir: str = "data/retraining") -> dict[int, dict
     return logs
 
 
+@st.cache_data(show_spinner=False)
+def load_feature_psi_matrix(
+    reference_path: str = "data/reference/X_reference.csv",
+    live_features_dir: str = "data/live/features",
+) -> pd.DataFrame:
+    """Compute and cache the 27-feature x 8-week Population Stability Index (PSI) matrix."""
+    ref_file = Path(reference_path)
+    live_dir = Path(live_features_dir)
+    if not ref_file.exists() or not live_dir.exists():
+        return pd.DataFrame()
+
+    from final_project.drift import compute_dataset_psi
+
+    ref_df = pd.read_csv(ref_file)
+    meta_cols = {"customer_id", "Churn Value", "feature_available_week", "label_release_week"}
+    feature_cols = [c for c in ref_df.columns if c not in meta_cols]
+    ref_features = ref_df[feature_cols]
+
+    weekly_records: dict[str, dict[str, float]] = {}
+    for w in range(1, 9):
+        feat_file = live_dir / f"week_{w}_features.csv"
+        if not feat_file.exists():
+            continue
+        w_df = pd.read_csv(feat_file)
+        common_cols = [c for c in feature_cols if c in w_df.columns]
+        psi_res = compute_dataset_psi(ref_features[common_cols], w_df[common_cols])
+        weekly_records[f"Week {w}"] = psi_res["feature_psi"]
+
+
+    if not weekly_records:
+        return pd.DataFrame()
+
+    return pd.DataFrame(weekly_records)
+
+
+
 def calculate_confusion_at_cutoff(
     y_true: np.ndarray,
     y_prob: np.ndarray,
