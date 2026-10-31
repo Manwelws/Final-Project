@@ -137,32 +137,32 @@ def render_experiment_hub_page() -> None:
             label="Total Tracked Trials",
             value=f"{total_trials}",
             delta=f"{completed_trials} completed",
-            delta_type="positive",
-            sublabel=f"{pruned_trials} pruned early",
+            delta_variant="positive",
+            subtext=f"{pruned_trials} pruned early",
         )
     with m_col2:
         render_metric_card(
             label="Peak CV ROC-AUC",
             value=f"{best_auc:.4f}",
             delta="+0.0160 vs baseline",
-            delta_type="positive",
-            sublabel="5-Fold Stratified CV",
+            delta_variant="positive",
+            subtext="5-Fold Stratified CV",
         )
     with m_col3:
         render_metric_card(
             label="Winning Architecture",
             value=winning_algo,
             delta="Optimal Bayes Trial",
-            delta_type="positive",
-            sublabel=f"Run: {best_run.get('run_name', 'N/A')[:18]}",
+            delta_variant="positive",
+            subtext=f"Run: {best_run.get('run_name', 'N/A')[:18]}",
         )
     with m_col4:
         render_metric_card(
             label="Optuna Pruning Efficiency",
             value=f"{(pruned_trials / total_trials * 100):.1f}%",
             delta="Compute Budget Saved",
-            delta_type="positive",
-            sublabel="MedianPruner (n_startup=5)",
+            delta_variant="positive",
+            subtext="MedianPruner (n_startup=5)",
         )
 
     st.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin: 1.5rem 0;'>", unsafe_allow_html=True)
