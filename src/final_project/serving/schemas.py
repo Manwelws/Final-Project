@@ -29,6 +29,7 @@ class CustomerProfileRaw(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
+    customer_id: str | int | None = Field(default=None, alias="CustomerID")
     gender: GenderType = Field(default="Male", alias="Gender")
     senior_citizen: BinaryChoice = Field(default="No", alias="Senior Citizen")
     partner: BinaryChoice = Field(default="No", alias="Partner")
