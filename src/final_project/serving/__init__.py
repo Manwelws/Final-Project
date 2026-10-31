@@ -16,8 +16,10 @@ from final_project.serving.adapter import (
     resolve_to_dataframe,
     MODEL_FEATURE_NAMES,
 )
+from final_project.serving.api import app
 
 __all__ = [
+    "app",
     "CustomerProfileRaw",
     "CustomerFeaturesVector",
     "CustomerPredictionRequest",
