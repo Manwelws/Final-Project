@@ -193,3 +193,12 @@ class ModelBundle:
             risk_tiers=tiers,
             threshold_applied=threshold,
         )
+
+    def predict_proba(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
+        """Return 1D array of positive class churn probabilities."""
+        return self.predict_risk(X).probabilities
+
+    def predict(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
+        """Return binary predictions applying calibrated decision threshold."""
+        return self.predict_risk(X).predictions
+

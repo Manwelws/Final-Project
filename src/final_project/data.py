@@ -56,3 +56,20 @@ def load_and_split_data(
         y_train=y_train,
         y_test=y_test,
     )
+
+
+def get_stratified_split(
+    X: pd.DataFrame,
+    y: pd.Series,
+    test_size: float = 0.20,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """Perform a stratified split on feature and target DataFrames directly."""
+    return train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        stratify=y,
+        random_state=random_state,
+    )
+
