@@ -23,6 +23,7 @@ from final_project.dashboard.state import (
     load_metadata,
 )
 from final_project.dashboard.styles import (
+    apply_custom_styles,
     render_hero,
     render_metric_card,
     style_plotly_figure,
@@ -473,3 +474,8 @@ def render_model_diagnostics_page() -> None:
                 - **Decision Implication**: Frontline retention specialists can trust the raw risk probability scores when triaging customers.
                 """
             )
+
+
+if __name__ == "__main__":
+    apply_custom_styles()
+    render_model_diagnostics_page()

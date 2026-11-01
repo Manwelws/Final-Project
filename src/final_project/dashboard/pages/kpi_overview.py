@@ -14,6 +14,7 @@ from final_project.dashboard.state import (
     compute_holdout_financial_impact,
 )
 from final_project.dashboard.styles import (
+    apply_custom_styles,
     render_hero,
     render_metric_card,
     style_plotly_figure,
@@ -565,3 +566,8 @@ def render_kpi_overview_page() -> None:
         )
     else:
         st.info("Full customer dataset not found for cohort exploration.")
+
+
+if __name__ == "__main__":
+    apply_custom_styles()
+    render_kpi_overview_page()

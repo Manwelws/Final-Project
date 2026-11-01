@@ -14,6 +14,7 @@ from final_project.dashboard.state import (
     load_feature_psi_matrix,
 )
 from final_project.dashboard.styles import (
+    apply_custom_styles,
     render_hero,
     render_metric_card,
     style_plotly_figure,
@@ -328,3 +329,8 @@ def render_drift_monitor_page() -> None:
             "Decision Trigger Reason",
         ]
         st.dataframe(display_df, hide_index=True, use_container_width=True)
+
+
+if __name__ == "__main__":
+    apply_custom_styles()
+    render_drift_monitor_page()

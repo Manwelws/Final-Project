@@ -31,26 +31,14 @@ def check_fastapi_health(url: str = "http://localhost:8000/health") -> bool:
         return False
 
 
-def main() -> None:
-    """Run the ChurnOps Streamlit dashboard application."""
-    st.set_page_config(
-        page_title="ChurnOps | Executive & Retraining Intelligence",
-        page_icon="⚡",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
-
-    # 1. Apply global dark modern styles & fonts
-    apply_custom_styles()
-
-    # 2. Load system metadata & health
+def render_sidebar_status() -> None:
+    """Render persistent sidebar brand header, system metadata, and status indicators."""
     meta = load_metadata()
     model_algo = meta.get("algorithm", "RandomForestClassifier")
     optimal_cutoff = meta.get("optimal_threshold", 0.12)
     feature_count = meta.get("feature_count", 27)
     api_online = check_fastapi_health()
 
-    # 3. Sidebar Brand & Navigation
     with st.sidebar:
         st.markdown(
             """
@@ -86,21 +74,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-        selected_page = st.radio(
-            "NAVIGATION",
-            [
-                "📊 Executive KPI Overview",
-                "📈 Model Benchmark & Diagnostics",
-                "🔄 Drift & Retraining Monitor",
-                "🎯 Live Retention Scoring & Triage",
-                "🧪 MLflow Experiment Hub",
-            ],
-            index=0,
-            label_visibility="visible",
-        )
-
-        st.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin: 1.5rem 0;'>", unsafe_allow_html=True)
-
+        st.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin: 1.0rem 0;'>", unsafe_allow_html=True)
         st.markdown("### ⚙️ System Status")
         st.markdown(
             f"""
@@ -130,20 +104,59 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    # 4. Route to page with error boundary
+
+def main() -> None:
+    """Run the ChurnOps Streamlit dashboard application with modern multi-page navigation."""
+    st.set_page_config(
+        page_title="ChurnOps | Executive & Retraining Intelligence",
+        page_icon="⚡",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+
+    # 1. Apply global dark modern styles & typography
+    apply_custom_styles()
+
+    # 2. Render persistent branded sidebar header & metadata
+    render_sidebar_status()
+
+    # 3. Modern Streamlit 1.36+ Multi-Page Navigation router
+    pages = [
+        st.Page(
+            render_kpi_overview_page,
+            title="Executive KPI Overview",
+            icon="📊",
+            default=True,
+        ),
+        st.Page(
+            render_model_diagnostics_page,
+            title="Model Benchmark & Diagnostics",
+            icon="📈",
+        ),
+        st.Page(
+            render_drift_monitor_page,
+            title="Drift & Retraining Monitor",
+            icon="🔄",
+        ),
+        st.Page(
+            render_retention_triage_page,
+            title="Live Retention Scoring & Triage",
+            icon="🎯",
+        ),
+        st.Page(
+            render_experiment_hub_page,
+            title="MLflow Experiment Hub",
+            icon="🧪",
+        ),
+    ]
+
+    pg = st.navigation(pages)
+
+    # 4. Route to selected page with error boundary
     try:
-        if selected_page == "📊 Executive KPI Overview":
-            render_kpi_overview_page()
-        elif selected_page == "📈 Model Benchmark & Diagnostics":
-            render_model_diagnostics_page()
-        elif selected_page == "🔄 Drift & Retraining Monitor":
-            render_drift_monitor_page()
-        elif selected_page == "🎯 Live Retention Scoring & Triage":
-            render_retention_triage_page()
-        elif selected_page == "🧪 MLflow Experiment Hub":
-            render_experiment_hub_page()
+        pg.run()
     except Exception as exc:
-        st.error(f"⚠️ Error rendering {selected_page}: {exc}")
+        st.error(f"⚠️ Error rendering page: {exc}")
         with st.expander("Show Detailed Error Traceback"):
             st.exception(exc)
 

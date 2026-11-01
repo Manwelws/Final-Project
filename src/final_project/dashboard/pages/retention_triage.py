@@ -14,6 +14,7 @@ from final_project.explainability import explain_customer_instance, CustomerExpl
 from final_project.registry import ModelBundle
 from final_project.dashboard.state import load_model_bundle, load_metadata
 from final_project.dashboard.styles import (
+    apply_custom_styles,
     render_hero,
     style_plotly_figure,
     COLORS,
@@ -640,3 +641,8 @@ def render_retention_triage_page() -> None:
                 """,
                 unsafe_allow_html=True,
             )
+
+
+if __name__ == "__main__":
+    apply_custom_styles()
+    render_retention_triage_page()
