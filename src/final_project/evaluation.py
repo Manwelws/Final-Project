@@ -1,6 +1,7 @@
 from dataclasses import dataclass, asdict
-from pathlib import Path
 import json
+import logging
+from pathlib import Path
 from typing import Any
 import numpy as np
 import pandas as pd
@@ -10,6 +11,8 @@ from sklearn.metrics import (
     brier_score_loss,
 )
 import joblib
+
+logger = logging.getLogger(__name__)
 
 from final_project.data import load_and_split_data
 from final_project.domain.cost import CostMatrix
@@ -347,7 +350,8 @@ def run_evaluation(
         try:
             with open(meta_p, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-        except Exception:
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            logger.warning("Failed to parse metadata from %s: %s", meta_p, exc)
             meta = {}
     else:
         meta = {}

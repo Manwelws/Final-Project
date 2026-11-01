@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-import sys
+import logging
 from pathlib import Path
+import sys
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 # Ensure repository src directory is prioritized in sys.path
 SRC_DIR = str(Path(__file__).resolve().parent.parent.parent)
@@ -24,10 +27,12 @@ def check_fastapi_health(url: str = "http://localhost:8000/health") -> bool:
     """Check if the local FastAPI inference service is running."""
     try:
         import urllib.request
+        import urllib.error
         req = urllib.request.Request(url, method="GET")
         with urllib.request.urlopen(req, timeout=0.6) as response:
             return response.status == 200
-    except Exception:
+    except (urllib.error.URLError, TimeoutError, OSError, ConnectionError) as exc:
+        logger.debug("FastAPI health check probe failed for %s: %s", url, exc)
         return False
 
 
@@ -157,6 +162,7 @@ def main() -> None:
     try:
         pg.run()
     except Exception as exc:
+        logger.error("Error rendering dashboard page: %s", exc, exc_info=True)
         st.error(f"⚠️ Error rendering page: {exc}")
         with st.expander("Show Detailed Error Traceback"):
             st.exception(exc)

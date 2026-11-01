@@ -4,10 +4,13 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 import json
 import hashlib
+import logging
 from typing import Any
 import numpy as np
 import pandas as pd
 import joblib
+
+logger = logging.getLogger(__name__)
 
 
 def compute_sha256(filepath: Path | str) -> str:
@@ -138,7 +141,8 @@ class ModelBundle:
         if meta_path.exists():
             try:
                 metadata = ModelMetadata.load(meta_path)
-            except Exception:
+            except (json.JSONDecodeError, OSError, KeyError, TypeError, ValueError) as exc:
+                logger.warning("Failed to load model metadata from %s: %s", meta_path, exc)
                 metadata = None
 
         # Verify SHA-256 before loading untrusted bytecode if hash is recorded in metadata
@@ -152,6 +156,7 @@ class ModelBundle:
                 )
 
         model = joblib.load(model_path)
+        logger.info("Loaded model artifact from %s", model_path)
 
         if metadata is None:
             metadata = ModelMetadata(

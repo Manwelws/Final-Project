@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 import pandas as pd
@@ -73,7 +76,8 @@ def load_retraining_logs(retrain_dir: str = "models/retrained") -> dict[int, dic
             if meta_file.exists():
                 with open(meta_file, "r", encoding="utf-8") as f:
                     logs[week_num] = json.load(f)
-        except Exception:
+        except (ValueError, IndexError, json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed parsing retraining log in %s: %s", week_dir, exc)
             continue
     return logs
 
@@ -204,8 +208,8 @@ def load_mlflow_runs(
                 elif "run_name" not in runs_df.columns:
                     runs_df["run_name"] = runs_df["run_id"]
                 return runs_df
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed loading MLflow runs from %s: %s", tracking_uri, exc)
 
     return generate_mock_mlflow_runs()
 

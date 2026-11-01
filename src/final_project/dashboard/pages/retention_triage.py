@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 from final_project.serving.schemas import CustomerProfileRaw
 from final_project.serving.adapter import encode_raw_profile
@@ -121,8 +124,8 @@ def score_customer_profile(
                     float(data["threshold_applied"]),
                     df,
                 )
-        except Exception:
-            pass  # Fallback to local ModelBundle
+        except Exception as exc:
+            logger.debug("API predict call failed, falling back to local ModelBundle: %s", exc)
 
     if bundle is None:
         bundle = load_model_bundle()
@@ -351,6 +354,7 @@ def render_retention_triage_page() -> None:
         bundle = load_model_bundle()
         meta = load_metadata()
     except Exception as exc:
+        logger.error("Failed to load production ModelBundle: %s", exc, exc_info=True)
         st.error(f"Failed to load production ModelBundle: {exc}")
         return
 

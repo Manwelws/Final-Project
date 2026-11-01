@@ -1,11 +1,15 @@
 """FastAPI application for model serving, prediction, and health monitoring."""
 
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Any
+import logging
 import os
+from pathlib import Path
+import time
+from typing import Any
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 from final_project.registry import ModelBundle
 from final_project.explainability import explain_customer_instance, get_or_create_explainer
@@ -35,9 +39,11 @@ async def lifespan(app: FastAPI):
         models_dir = Path(os.environ.get("CHURN_MODELS_DIR", "models"))
         try:
             app.state.bundle = ModelBundle.load(model_dir=models_dir)
+            logger.info("Successfully loaded ModelBundle from %s on startup", models_dir)
         except Exception as exc:
             app.state.bundle = None
             app.state.load_error = str(exc)
+            logger.error("Failed to load ModelBundle on startup from %s: %s", models_dir, exc, exc_info=True)
     yield
 
 
@@ -58,8 +64,10 @@ def get_model_bundle() -> ModelBundle:
     try:
         bundle = ModelBundle.load(model_dir=models_dir)
         app.state.bundle = bundle
+        logger.info("Successfully loaded ModelBundle from %s on lazy initialization", models_dir)
         return bundle
     except Exception as exc:
+        logger.error("Failed to load ModelBundle from %s: %s", models_dir, exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Model artifact unavailable: {exc}",
@@ -153,6 +161,7 @@ def predict_churn(request: CustomerPredictionRequest) -> SinglePredictionRespons
     try:
         df = resolve_to_dataframe(request)
     except Exception as exc:
+        logger.warning("Validation failed resolving single prediction input: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Failed to resolve customer input to feature vector: {exc}",
@@ -186,6 +195,7 @@ def predict_churn_batch(request: BatchPredictionRequest) -> BatchPredictionRespo
     try:
         batch_df = encode_batch_profiles(request.items)
     except Exception as exc:
+        logger.warning("Validation failed resolving batch prediction input: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Failed to resolve batch input to feature matrix: {exc}",
@@ -241,10 +251,12 @@ def explain_customer(request: CustomerPredictionRequest) -> CustomerExplainRespo
         * protective_factors: Factors protecting against churn (-) sorted by magnitude.
         * top_risk_driver & top_protective_factor: Primary drivers for retention outreach.
     """
+    start_time = time.perf_counter()
     bundle = get_model_bundle()
     try:
         df = resolve_to_dataframe(request)
     except Exception as exc:
+        logger.warning("Validation failed resolving explain request input: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Failed to resolve customer input to feature vector: {exc}",
@@ -259,10 +271,18 @@ def explain_customer(request: CustomerPredictionRequest) -> CustomerExplainRespo
             explainer=explainer,
         )
     except Exception as exc:
+        logger.error("Error computing SHAP explanation: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error computing SHAP explanation: {exc}",
         )
+
+    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+    logger.info(
+        "Computed customer explainability in %.2f ms (attribution_method: %s)",
+        elapsed_ms,
+        explanation.attribution_method,
+    )
 
     risk_drivers = [
         DriverContribution(parent_feature=p, shap_impact=val)
