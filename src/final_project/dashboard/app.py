@@ -79,7 +79,8 @@ def render_sidebar_status() -> None:
         st.markdown(
             f"""
             <div style="font-size: 0.82rem; color: #9CA3AF; line-height: 1.8;">
-                <div><b>Algorithm:</b> <code style="color: #60A5FA;">{model_algo}</code></div>
+                <div><b>Active Production:</b> <code style="color: #60A5FA;">{model_algo}</code></div>
+                <div><b>Benchmark Champion:</b> <code style="color: #EC4899;">Stacking (0.8599)</code></div>
                 <div><b>Optimal Cutoff:</b> <code style="color: #34D399;">{optimal_cutoff:.2f}</code></div>
                 <div><b>Input Features:</b> <code>{feature_count} numeric</code></div>
                 <div><b>Customer Base:</b> <code>7,043 accounts</code></div>

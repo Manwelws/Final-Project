@@ -35,7 +35,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--algorithm",
         type=str,
         default="random_forest",
-        choices=["random_forest", "lightgbm", "xgboost", "rf", "lgb", "xgb"],
+        choices=[
+            "random_forest",
+            "lightgbm",
+            "xgboost",
+            "rf",
+            "lgb",
+            "xgb",
+            "logistic_regression",
+            "logistic",
+            "lr",
+            "bagged_logistic",
+            "bagged_lr",
+            "mlp",
+            "voting_ensemble",
+            "stacking_ensemble",
+        ],
         help="Model algorithm to train (default: random_forest)",
     )
     train_parser.add_argument(
@@ -101,6 +116,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=5,
         help="Number of stratified cross-validation folds (default: 5)",
+    )
+    bench_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Benchmark all candidate model families including non-tree (Logistic, MLP) and ensemble combinations",
     )
     bench_parser.add_argument(
         "--random-state",
@@ -345,9 +365,25 @@ def main(argv: list[str] | None = None) -> int:
             random_state=args.random_state,
         )
 
+        algos = (
+            [
+                "random_forest",
+                "lightgbm",
+                "xgboost",
+                "logistic_regression",
+                "bagged_logistic",
+                "mlp",
+                "voting_ensemble",
+                "stacking_ensemble",
+            ]
+            if getattr(args, "all", False)
+            else None
+        )
+
         df = benchmark_candidates(
             X=split.X_train,
             y=split.y_train,
+            algorithms=algos,
             cv_folds=args.cv_folds,
             random_state=args.random_state,
         )

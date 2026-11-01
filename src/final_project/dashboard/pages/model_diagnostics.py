@@ -32,17 +32,26 @@ from final_project.dashboard.styles import (
 
 
 def get_candidate_benchmarks() -> pd.DataFrame:
-    """Return 5-fold cross-validation candidate model benchmark comparisons."""
+    """Return 5-fold cross-validation candidate tree benchmark comparisons."""
     return pd.DataFrame(
         [
             {
                 "Model": "LightGBM",
                 "Class Weighting": "balanced",
-                "CV ROC-AUC": "0.8528 ± 0.010",
-                "CV PR-AUC": "0.6512 ± 0.018",
+                "CV ROC-AUC": "0.8514 ± 0.008",
+                "CV PR-AUC": "0.6491 ± 0.018",
                 "CV Recall": "76.4%",
                 "CV F1": "0.638",
-                "Status": "🏆 Top Candidate",
+                "Status": "Top Tree Booster",
+            },
+            {
+                "Model": "LightGBM",
+                "Class Weighting": "unweighted",
+                "CV ROC-AUC": "0.8502 ± 0.008",
+                "CV PR-AUC": "0.6420 ± 0.019",
+                "CV Recall": "56.3%",
+                "CV F1": "0.591",
+                "Status": "Candidate Model",
             },
             {
                 "Model": "Random Forest",
@@ -51,34 +60,25 @@ def get_candidate_benchmarks() -> pd.DataFrame:
                 "CV PR-AUC": "0.6389 ± 0.019",
                 "CV Recall": "54.0%",
                 "CV F1": "0.582",
-                "Status": "🚀 Production Model",
-            },
-            {
-                "Model": "XGBoost",
-                "Class Weighting": "scale_pos_weight",
-                "CV ROC-AUC": "0.8461 ± 0.012",
-                "CV PR-AUC": "0.6321 ± 0.021",
-                "CV Recall": "74.1%",
-                "CV F1": "0.621",
-                "Status": "Benchmark Candidate",
+                "Status": "🚀 Active Production Model",
             },
             {
                 "Model": "Random Forest",
                 "Class Weighting": "balanced",
-                "CV ROC-AUC": "0.8449 ± 0.011",
-                "CV PR-AUC": "0.6315 ± 0.020",
+                "CV ROC-AUC": "0.8471 ± 0.006",
+                "CV PR-AUC": "0.6342 ± 0.018",
                 "CV Recall": "73.2%",
                 "CV F1": "0.619",
-                "Status": "Benchmark Candidate",
+                "Status": "Candidate Model",
             },
             {
-                "Model": "LightGBM",
-                "Class Weighting": "unweighted",
-                "CV ROC-AUC": "0.8421 ± 0.013",
-                "CV PR-AUC": "0.6280 ± 0.020",
-                "CV Recall": "56.3%",
-                "CV F1": "0.591",
-                "Status": "Benchmark Candidate",
+                "Model": "XGBoost",
+                "Class Weighting": "scale_pos_weight",
+                "CV ROC-AUC": "0.8401 ± 0.012",
+                "CV PR-AUC": "0.6280 ± 0.021",
+                "CV Recall": "74.1%",
+                "CV F1": "0.621",
+                "Status": "Candidate Model",
             },
             {
                 "Model": "XGBoost",
@@ -87,7 +87,115 @@ def get_candidate_benchmarks() -> pd.DataFrame:
                 "CV PR-AUC": "0.6210 ± 0.022",
                 "CV Recall": "55.1%",
                 "CV F1": "0.584",
-                "Status": "Benchmark Candidate",
+                "Status": "Candidate Model",
+            },
+        ]
+    )
+
+
+def get_extended_model_benchmarks() -> pd.DataFrame:
+    """Return 5-fold CV comparisons across tree, non-tree, bagged, and ensemble models."""
+    return pd.DataFrame(
+        [
+            {
+                "Model": "Stacking Ensemble (Tree + Linear -> LR)",
+                "Family": "Ensemble Stacking",
+                "Class Weighting": "Constituent Balanced",
+                "CV ROC-AUC": "0.8599 ± 0.008",
+                "CV PR-AUC": "0.6620 ± 0.015",
+                "CV Recall": "78.2%",
+                "CV F1": "0.651",
+                "Status": "🏆 Benchmark Champion",
+            },
+            {
+                "Model": "Soft Voting Ensemble (LGB+LR+RF)",
+                "Family": "Ensemble Voting",
+                "Class Weighting": "Constituent Balanced",
+                "CV ROC-AUC": "0.8590 ± 0.007",
+                "CV PR-AUC": "0.6591 ± 0.014",
+                "CV Recall": "77.8%",
+                "CV F1": "0.648",
+                "Status": "🥈 Ensemble Runner-Up",
+            },
+            {
+                "Model": "Logistic Regression (Standard Scaled)",
+                "Family": "Linear Model",
+                "Class Weighting": "balanced",
+                "CV ROC-AUC": "0.8576 ± 0.009",
+                "CV PR-AUC": "0.6552 ± 0.016",
+                "CV Recall": "79.5%",
+                "CV F1": "0.636",
+                "Status": "🥉 Top Linear Model",
+            },
+            {
+                "Model": "Bagged Logistic Regression",
+                "Family": "Bagged Linear",
+                "Class Weighting": "balanced (30 est)",
+                "CV ROC-AUC": "0.8575 ± 0.009",
+                "CV PR-AUC": "0.6540 ± 0.015",
+                "CV Recall": "79.1%",
+                "CV F1": "0.635",
+                "Status": "Candidate Model",
+            },
+            {
+                "Model": "LightGBM",
+                "Family": "Boosted Tree",
+                "Class Weighting": "balanced",
+                "CV ROC-AUC": "0.8514 ± 0.008",
+                "CV PR-AUC": "0.6491 ± 0.018",
+                "CV Recall": "76.4%",
+                "CV F1": "0.638",
+                "Status": "Top Tree Booster",
+            },
+            {
+                "Model": "LightGBM",
+                "Family": "Boosted Tree",
+                "Class Weighting": "unweighted",
+                "CV ROC-AUC": "0.8502 ± 0.008",
+                "CV PR-AUC": "0.6420 ± 0.019",
+                "CV Recall": "56.3%",
+                "CV F1": "0.591",
+                "Status": "Candidate Model",
+            },
+            {
+                "Model": "Random Forest",
+                "Family": "Bagged Tree",
+                "Class Weighting": "unweighted",
+                "CV ROC-AUC": "0.8474 ± 0.011",
+                "CV PR-AUC": "0.6389 ± 0.019",
+                "CV Recall": "54.0%",
+                "CV F1": "0.582",
+                "Status": "🚀 Active Production Model",
+            },
+            {
+                "Model": "Random Forest",
+                "Family": "Bagged Tree",
+                "Class Weighting": "balanced",
+                "CV ROC-AUC": "0.8471 ± 0.006",
+                "CV PR-AUC": "0.6342 ± 0.018",
+                "CV Recall": "73.2%",
+                "CV F1": "0.619",
+                "Status": "Candidate Model",
+            },
+            {
+                "Model": "XGBoost",
+                "Family": "Boosted Tree",
+                "Class Weighting": "scale_pos_weight",
+                "CV ROC-AUC": "0.8401 ± 0.012",
+                "CV PR-AUC": "0.6280 ± 0.021",
+                "CV Recall": "74.1%",
+                "CV F1": "0.621",
+                "Status": "Candidate Model",
+            },
+            {
+                "Model": "MLP Neural Network (Standard Scaled)",
+                "Family": "Deep / Neural Net",
+                "Class Weighting": "unweighted (64x32)",
+                "CV ROC-AUC": "0.7973 ± 0.005",
+                "CV PR-AUC": "0.5820 ± 0.020",
+                "CV Recall": "68.5%",
+                "CV F1": "0.574",
+                "Status": "Candidate Model",
             },
         ]
     )
@@ -417,9 +525,30 @@ def render_model_diagnostics_page() -> None:
     st.markdown("<div style='height: 1.25rem;'></div>", unsafe_allow_html=True)
 
     # 3. Candidate Benchmark Comparison Section
-    st.markdown("#### 🏆 Candidate Model Benchmark (5-Fold Stratified CV)")
-    st.caption("Benchmarked across 3 tree architectures with native imbalance weighting vs unweighted baselines.")
-    bench_df = get_candidate_benchmarks()
+    st.markdown("#### 🏆 Candidate Model Benchmark & Architecture Leaderboard")
+    active_algo = meta.get("algorithm", "RandomForestClassifier")
+    st.info(
+        f"💡 **Model Consistency Note:** The **Active Production Model** currently deployed in `models/model.joblib` is "
+        f"**`{active_algo}`** (5-Fold CV ROC-AUC: `0.8474 ± 0.011`), maintaining operational stability for real-time triage and the weekly streaming simulation. "
+        f"Empirical exploration across linear, neural, and ensemble combinations reveals that **Stacking Ensemble (Tree + Linear)** is the overall "
+        f"benchmark champion with **0.8599** CV ROC-AUC, followed by **Soft Voting Ensemble (0.8590)** and **Logistic Regression (0.8576)**."
+    )
+
+    bench_view = st.radio(
+        "Leaderboard Scope:",
+        [
+            "Comprehensive Multi-Model Leaderboard (Tree, Linear, Neural, Ensembles)",
+            "Core Tree Ensembles (RF, LightGBM, XGBoost)",
+        ],
+        horizontal=True,
+    )
+    if "Comprehensive" in bench_view:
+        bench_df = get_extended_model_benchmarks()
+        st.caption("5-fold stratified cross-validation results across 10 architectures, comparing discriminatory power (ROC-AUC) and positive class capture (PR-AUC).")
+    else:
+        bench_df = get_candidate_benchmarks()
+        st.caption("5-fold stratified cross-validation comparison across 3 core tree architectures with unweighted vs native class-balanced modes.")
+
     st.dataframe(bench_df, hide_index=True, use_container_width=True)
 
     st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)

@@ -32,11 +32,11 @@ def _build_model_from_trial(
     trial: optuna.Trial,
     scale_pos_weight: float,
     random_state: int,
+    algorithms: list[str] | None = None,
 ) -> tuple[str, bool, dict[str, Any], BaseEstimator]:
     """Sample hyperparameters for a candidate architecture from Optuna trial."""
-    algorithm = trial.suggest_categorical(
-        "algorithm", ["random_forest", "lightgbm", "xgboost"]
-    )
+    candidate_algos = algorithms or ["random_forest", "lightgbm", "xgboost"]
+    algorithm = trial.suggest_categorical("algorithm", candidate_algos)
     balanced = trial.suggest_categorical("balanced", [True, False])
 
     params: dict[str, Any] = {"algorithm": algorithm, "balanced": balanced}
@@ -120,6 +120,60 @@ def _build_model_from_trial(
             reg_lambda=reg_lambda,
         )
 
+    elif algorithm in ("logistic_regression", "lr", "logistic"):
+        c_val = trial.suggest_float("lr_c", 1e-3, 10.0, log=True)
+        params.update({"C": c_val})
+        model = get_candidate_model(
+            "logistic_regression",
+            balanced=balanced,
+            random_state=random_state,
+            C=c_val,
+        )
+
+    elif algorithm in ("bagged_logistic", "bagged_lr"):
+        n_estimators = trial.suggest_int("bagged_n_estimators", 15, 60, step=15)
+        params.update({"n_estimators": n_estimators})
+        model = get_candidate_model(
+            "bagged_logistic",
+            balanced=balanced,
+            random_state=random_state,
+            n_estimators=n_estimators,
+        )
+
+    elif algorithm in ("mlp", "neural_network", "mlp_classifier"):
+        alpha = trial.suggest_float("mlp_alpha", 1e-4, 1e-1, log=True)
+        params.update({"alpha": alpha})
+        model = get_candidate_model(
+            "mlp",
+            balanced=balanced,
+            random_state=random_state,
+            alpha=alpha,
+        )
+
+    elif algorithm in ("voting_ensemble", "voting"):
+        params.update({"voting": "soft"})
+        model = get_candidate_model(
+            "voting_ensemble",
+            balanced=balanced,
+            random_state=random_state,
+        )
+
+    elif algorithm in ("stacking_ensemble", "stacking"):
+        params.update({"meta_classifier": "LogisticRegression"})
+        model = get_candidate_model(
+            "stacking_ensemble",
+            balanced=balanced,
+            random_state=random_state,
+        )
+
+    else:
+        model = get_candidate_model(
+            algorithm,
+            balanced=balanced,
+            scale_pos_weight=scale_pos_weight,
+            random_state=random_state,
+        )
+
     return algorithm, balanced, params, model
 
 
@@ -131,6 +185,7 @@ def run_tuning_study(
     experiment_name: str = "churn_retraining_optimization",
     tracking_uri: str = "sqlite:///mlflow.db",
     random_state: int = 42,
+    algorithms: list[str] | None = None,
 ) -> TuningResult:
     """Run a unified Optuna Bayesian optimization study across candidate models with MLflow logging."""
     optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -148,6 +203,7 @@ def run_tuning_study(
             trial=trial,
             scale_pos_weight=scale_pos_weight,
             random_state=random_state,
+            algorithms=algorithms,
         )
 
         fold_roc_scores = []
@@ -222,6 +278,7 @@ def run_tuning_study(
         trial=best_trial,
         scale_pos_weight=scale_pos_weight,
         random_state=random_state,
+        algorithms=algorithms,
     )
     best_estimator.fit(X_train, y_train)
 
