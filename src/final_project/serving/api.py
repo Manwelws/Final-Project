@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from final_project.registry import ModelBundle
-from final_project.explainability import explain_customer_instance
+from final_project.explainability import explain_customer_instance, get_or_create_explainer
 from final_project.serving.schemas import (
     CustomerPredictionRequest,
     SinglePredictionResponse,
@@ -50,7 +50,7 @@ app = FastAPI(
 
 
 def get_model_bundle() -> ModelBundle:
-    """Retrieve or lazily initialize the ModelBundle."""
+    """Retrieve the ModelBundle from application state or raise 503."""
     bundle = getattr(app.state, "bundle", None)
     if bundle is not None:
         return bundle
@@ -66,6 +66,15 @@ def get_model_bundle() -> ModelBundle:
         )
 
 
+def get_explainer(bundle: ModelBundle) -> Any:
+    """Retrieve or lazily initialize the cached SHAP explainer instance."""
+    explainer = getattr(app.state, "explainer", None)
+    if explainer is None:
+        explainer = get_or_create_explainer(bundle.model)
+        app.state.explainer = explainer
+    return explainer
+
+
 @app.get(
     "/health",
     response_model=HealthResponse,
@@ -73,18 +82,59 @@ def get_model_bundle() -> ModelBundle:
     summary="Check service liveness and model metadata",
 )
 def health_check() -> HealthResponse:
-    """Return service status, active model algorithm, optimal decision cutoff, and metadata."""
-    bundle = get_model_bundle()
-    meta = bundle.metadata
+    """Return service liveness status, active model algorithm, optimal decision cutoff, and metadata.
+
+    This endpoint is a lightweight liveness probe that always returns 200 OK without triggering artifact reload.
+    """
+    bundle = getattr(app.state, "bundle", None)
+    if bundle is not None:
+        meta = bundle.metadata
+        algo = meta.algorithm or bundle.model.__class__.__name__
+        thresh = meta.optimal_threshold if meta.optimal_threshold > 0 else 0.50
+        roc_auc = meta.holdout_roc_auc
+        pr_auc = meta.holdout_pr_auc
+        timestamp = meta.timestamp
+        feats = len(meta.features) if meta.features else 27
+    else:
+        algo = "unloaded"
+        thresh = 0.50
+        roc_auc = 0.0
+        pr_auc = 0.0
+        timestamp = "unloaded"
+        feats = 27
+
     return HealthResponse(
         status="healthy",
-        model_algorithm=meta.algorithm or bundle.model.__class__.__name__,
-        optimal_threshold=meta.optimal_threshold if meta.optimal_threshold > 0 else 0.50,
-        holdout_roc_auc=meta.holdout_roc_auc,
-        holdout_pr_auc=meta.holdout_pr_auc,
-        model_timestamp=meta.timestamp,
-        feature_count=len(meta.features) if meta.features else 27,
+        algorithm=algo,
+        model_algorithm=algo,
+        optimal_threshold=thresh,
+        holdout_roc_auc=roc_auc,
+        holdout_pr_auc=pr_auc,
+        model_timestamp=timestamp,
+        feature_count=feats,
     )
+
+
+@app.get(
+    "/ready",
+    tags=["System"],
+    summary="Check service readiness",
+)
+def ready_check() -> dict[str, Any]:
+    """Readiness probe returning 200 OK if model bundle is loaded and ready to serve inference; 503 otherwise."""
+    bundle = getattr(app.state, "bundle", None)
+    if bundle is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model artifact is not loaded or unavailable.",
+        )
+    meta = bundle.metadata
+    algo = meta.algorithm or bundle.model.__class__.__name__
+    return {
+        "status": "ready",
+        "algorithm": algo,
+        "optimal_threshold": meta.optimal_threshold if meta.optimal_threshold > 0 else 0.50,
+    }
 
 
 @app.post(
@@ -151,8 +201,12 @@ def predict_churn_batch(request: BatchPredictionRequest) -> BatchPredictionRespo
         cust_id = None
         if isinstance(raw_item, dict):
             cust_id = raw_item.get("customer_id") or raw_item.get("CustomerID")
-        elif hasattr(raw_item, "customer_id"):
+        elif hasattr(raw_item, "customer_id") and getattr(raw_item, "customer_id", None) is not None:
             cust_id = getattr(raw_item, "customer_id", None)
+        elif hasattr(raw_item, "profile") and getattr(raw_item, "profile", None) is not None:
+            cust_id = getattr(raw_item.profile, "customer_id", None)
+        elif hasattr(raw_item, "vector") and getattr(raw_item, "vector", None) is not None:
+            cust_id = getattr(raw_item.vector, "customer_id", None)
 
         items.append(
             BatchPredictionItem(
@@ -196,11 +250,13 @@ def explain_customer(request: CustomerPredictionRequest) -> CustomerExplainRespo
             detail=f"Failed to resolve customer input to feature vector: {exc}",
         )
 
+    explainer = get_explainer(bundle)
     try:
         explanation = explain_customer_instance(
             model=bundle.model,
             customer_features=df,
             feature_names=MODEL_FEATURE_NAMES,
+            explainer=explainer,
         )
     except Exception as exc:
         raise HTTPException(
@@ -227,5 +283,6 @@ def explain_customer(request: CustomerPredictionRequest) -> CustomerExplainRespo
         protective_factors=protective_factors,
         top_risk_driver=top_risk,
         top_protective_factor=top_prot,
+        attribution_method=explanation.attribution_method,
     )
 
