@@ -9,6 +9,7 @@ import streamlit as st
 
 from final_project.dashboard.state import load_mlflow_runs
 from final_project.dashboard.styles import (
+    apply_custom_styles,
     render_hero,
     render_metric_card,
     style_plotly_figure,
@@ -309,3 +310,8 @@ def render_experiment_hub_page() -> None:
             """,
             unsafe_allow_html=True,
         )
+
+
+if __name__ == "__main__":
+    apply_custom_styles()
+    render_experiment_hub_page()
