@@ -173,6 +173,16 @@ class StreamingBatchEngine:
         return weekly_batches
 
 
+def _safe_roc_auc_score(y_true: np.ndarray, y_pred_proba: np.ndarray) -> float | None:
+    """Compute ROC-AUC safely, returning None if y_true contains fewer than 2 classes."""
+    if len(np.unique(y_true)) < 2:
+        return None
+    try:
+        return float(roc_auc_score(y_true, y_pred_proba))
+    except (ValueError, TypeError):
+        return None
+
+
 def _safe_fit_with_sample_weights(
     model: Any,
     X: pd.DataFrame | np.ndarray,
@@ -314,7 +324,7 @@ class SimulationRunner:
     ) -> Any:
         """Fit static never-retrain baseline on pre-drift released data."""
         never_retrain_data = master[
-            master["label_release_week"] <= self.config.drift_start_week
+            master["label_release_week"] < self.config.drift_start_week
         ].copy()
 
         if len(never_retrain_data) > 0:
@@ -324,7 +334,7 @@ class SimulationRunner:
             model_never.fit(X_nr, y_nr)
             self._log(
                 f"\nNever-retrain baseline fitted on {len(never_retrain_data)} samples "
-                f"(weeks 1-{self.config.drift_start_week})"
+                f"(weeks 1-{self.config.drift_start_week - 1})"
             )
         else:
             model_never = clone(base_production_model)
@@ -422,30 +432,42 @@ class SimulationRunner:
             auc_never = None
             if model_never is not None:
                 y_never_pred = model_never.predict_proba(X_ref)[:, 1]
-                auc_never = float(roc_auc_score(y_ref, y_never_pred))
-                self._log(f"  Never-retrain AUC on static reference: {auc_never:.4f}")
+                auc_never = _safe_roc_auc_score(y_ref, y_never_pred)
+                if auc_never is not None:
+                    self._log(f"  Never-retrain AUC on static reference: {auc_never:.4f}")
 
-            # 7. Supervised performance decay check
+            # 7. Supervised performance decay check (R1-1: strictly out-of-sample)
             should_retrain = False
             trigger_reason = ""
+
+            # Score the incoming live window using the active model frozen BEFORE this week
+            active_model = model_retrain if model_retrain is not None else base_production_model
+            y_ret_pred = active_model.predict_proba(X_recent)[:, 1]
+            auc_ret_recent = _safe_roc_auc_score(y_recent, y_ret_pred)
+
+            if auc_ret_recent is not None:
+                self._log(f"  Live out-of-sample AUC on recent data: {auc_ret_recent:.4f}")
 
             if model_retrain is None:
                 should_retrain = True
                 trigger_reason = "initial training"
+                if auc_ret_recent is not None:
+                    self.monitor.update_best_auc(auc_ret_recent)
             else:
-                y_ret_pred = model_retrain.predict_proba(X_recent)[:, 1]
-                auc_ret_recent = float(roc_auc_score(y_recent, y_ret_pred))
-                self._log(f"  Retrain-model AUC on recent live data: {auc_ret_recent:.4f}")
-
-                decay_triggered, reason = self.monitor.check_decay(
-                    recent_auc=auc_ret_recent,
-                    model_retrain_exists=True,
-                )
-                if decay_triggered:
-                    should_retrain = True
-                    trigger_reason = reason
-                else:
-                    self._log(f"  No retraining triggered (best recent AUC: {self.monitor.best_recent_auc:.4f})")
+                if auc_ret_recent is not None:
+                    decay_triggered, reason = self.monitor.check_decay(
+                        recent_auc=auc_ret_recent,
+                        model_retrain_exists=True,
+                    )
+                    if decay_triggered:
+                        should_retrain = True
+                        trigger_reason = reason
+                    else:
+                        if self.monitor.best_recent_auc is not None:
+                            self.monitor.update_best_auc(max(self.monitor.best_recent_auc, auc_ret_recent))
+                        else:
+                            self.monitor.update_best_auc(auc_ret_recent)
+                        self._log(f"  No retraining triggered (best recent AUC: {self.monitor.best_recent_auc:.4f})")
 
             # 8. Retraining with Exponential Sample Decay
             if should_retrain and n_labeled >= self.config.min_labels_for_retrain:
@@ -460,16 +482,13 @@ class SimulationRunner:
                 model_retrain = clone(base_production_model)
                 _safe_fit_with_sample_weights(model_retrain, X_avail, y_avail, sample_weights)
 
-                y_ret_pred_recent = model_retrain.predict_proba(X_recent)[:, 1]
-                auc_ret_recent = float(roc_auc_score(y_recent, y_ret_pred_recent))
-                self.monitor.update_best_auc(auc_ret_recent)
-
+                # Evaluated on static reference (R1-1: do NOT evaluate on X_recent in-sample)
                 y_ret_pred_ref = model_retrain.predict_proba(X_ref)[:, 1]
-                auc_ret_ref = float(roc_auc_score(y_ref, y_ret_pred_ref))
+                auc_ret_ref = _safe_roc_auc_score(y_ref, y_ret_pred_ref)
 
                 retrained_weeks.append(week)
-                self._log(f"  Retrained model AUC on recent live data: {auc_ret_recent:.4f}")
-                self._log(f"  Retrained model AUC on static reference: {auc_ret_ref:.4f}")
+                if auc_ret_ref is not None:
+                    self._log(f"  Retrained model AUC on static reference: {auc_ret_ref:.4f}")
 
                 if self.save_artifacts:
                     retrain_dir = self.retraining_dir / f"week_{week}"
@@ -482,22 +501,13 @@ class SimulationRunner:
                         "psi_max": round(psi_max, 4),
                         "psi_status": psi_status,
                         "sample_decay_rate": self.config.sample_decay_rate,
-                        "auc_on_recent_live": round(auc_ret_recent, 4),
-                        "auc_on_static_reference": round(auc_ret_ref, 4),
+                        "auc_on_recent_live": round(auc_ret_recent, 4) if auc_ret_recent is not None else None,
+                        "auc_on_static_reference": round(auc_ret_ref, 4) if auc_ret_ref is not None else None,
                         "never_retrain_auc_reference": round(auc_never, 4) if auc_never is not None else None,
                     }
                     with open(retrain_dir / "metrics.json", "w") as f:
                         json.dump(metrics, f, indent=2)
                     joblib.dump(model_retrain, retrain_dir / "model.joblib")
-
-            elif model_retrain is not None:
-                y_ret_pred = model_retrain.predict_proba(X_recent)[:, 1]
-                auc_ret_recent = float(roc_auc_score(y_recent, y_ret_pred))
-                if self.monitor.best_recent_auc is not None:
-                    self.monitor.update_best_auc(max(self.monitor.best_recent_auc, auc_ret_recent))
-                else:
-                    self.monitor.update_best_auc(auc_ret_recent)
-                self._log(f"  Retrain-model AUC on recent live data: {auc_ret_recent:.4f}")
 
             drift_metrics.append({
                 "week": week,
@@ -507,6 +517,11 @@ class SimulationRunner:
                 "psi_status": psi_status,
                 "never_retrain_auc_reference": round(auc_never, 4) if auc_never is not None else None,
                 "retrain_model_auc_recent": (
+                    round(auc_ret_recent, 4)
+                    if auc_ret_recent is not None
+                    else None
+                ),
+                "best_retrain_auc": (
                     round(self.monitor.best_recent_auc, 4)
                     if self.monitor.best_recent_auc is not None
                     else None

@@ -65,6 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Proportion of data for holdout test split (default: 0.20)",
     )
     train_parser.add_argument(
+        "--val-size",
+        type=float,
+        default=0.10,
+        help="Proportion of data for threshold calibration validation split (default: 0.10)",
+    )
+    train_parser.add_argument(
         "--cv-folds",
         type=int,
         default=5,
@@ -175,6 +181,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.20,
         help="Holdout test split proportion (default: 0.20)",
+    )
+    eval_parser.add_argument(
+        "--val-size",
+        type=float,
+        default=0.10,
+        help="Validation split proportion for threshold calibration (default: 0.10)",
     )
     eval_parser.add_argument(
         "--random-state",
@@ -336,6 +348,7 @@ def main(argv: list[str] | None = None) -> int:
             experiment_name=args.experiment_name,
             tracking_uri=args.tracking_uri,
             test_size=args.test_size,
+            val_size=getattr(args, "val_size", 0.10),
             cv_folds=args.cv_folds,
             random_state=args.random_state,
         )
@@ -413,6 +426,7 @@ def main(argv: list[str] | None = None) -> int:
             cost_fn=args.cost_fn,
             cost_fp=args.cost_fp,
             test_size=args.test_size,
+            val_size=getattr(args, "val_size", 0.10),
             random_state=args.random_state,
         )
 

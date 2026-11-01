@@ -2,10 +2,10 @@
 
 ## 1. Executive Summary
 - **Holdout Test Set Size**: 1,409 customers (20% stratified split)
-- **Holdout ROC-AUC**: `0.8390`
-- **Holdout PR-AUC**: `0.6276`
-- **Brier Calibration Score**: `0.1392` (lower is better, <0.15 indicates strong calibration)
-- **Business Cost Savings at Optimal Cutoff**: **$21,860.00 (59.5% reduction in expected financial loss)**
+- **Holdout ROC-AUC**: `0.8436`
+- **Holdout PR-AUC**: `0.6442`
+- **Brier Calibration Score**: `0.1373` (lower is better, <0.15 indicates strong calibration)
+- **Business Cost Savings at Optimal Cutoff**: **$10,600.00 (29.4% reduction in expected financial loss)**
 
 ---
 
@@ -16,16 +16,16 @@ Assumed Matrix: $C_{\text{FN}} = \$200$ (missed churner customer lifetime loss) 
 
 | Decision Strategy | Threshold | Precision | Recall | F1 Score | F2 Score | False Negatives | False Positives | Expected Loss ($) |
 |---|---|---|---|---|---|---|---|---|
-| **Default Threshold** | `0.50` | `0.631` | `0.540` | `0.582` | `0.556` | `172` | `118` | **$36,760** |
-| **Max F1 Threshold** | `0.38` | `0.581` | `0.693` | `0.632` | `0.667` | `115` | `187` | **$26,740** |
-| **Cost-Optimal Threshold** | **`0.12`** | `0.418` | **`0.930`** | `0.577` | **`0.747`** | **`26`** | `485` | **$14,900** |
+| **Default Threshold** | `0.50` | `0.641` | `0.548` | `0.591` | `0.564` | `169` | `115` | **$36,100** |
+| **Max F1 Threshold** | `0.36` | `0.577` | `0.711` | `0.637` | `0.680` | `108` | `195` | **$25,500** |
+| **Cost-Optimal Threshold** | **`0.36`** | `0.577` | **`0.711`** | `0.637` | **`0.680`** | **`108`** | `195` | **$25,500** |
 
 ---
 
 ## 3. Key Observations & Operational Recommendations
-1. **Financial Leverage**: Shifting the decision cutoff from `0.50` down to **`0.12`** captures **146 additional at-risk churners**, reducing missed churn loss from $34,400 to $5,200.
-2. **Acceptable Outreach Volume**: While false alarms increase by 367 customers, each outreach costs only $20, yielding a net business savings of **$21,860.00**.
-3. **Serving Recommendation**: Production scoring should apply the decision threshold `threshold=0.12` when routing customers to the retention team.
+1. **Financial Leverage**: Shifting the decision cutoff from `0.50` down to **`0.36`** captures **61 additional at-risk churners**, reducing missed churn loss from $33,800 to $21,600.
+2. **Acceptable Outreach Volume**: While false alarms increase by 80 customers, each outreach costs only $20, yielding a net business savings of **$10,600.00**.
+3. **Serving Recommendation**: Production scoring should apply the decision threshold `threshold=0.36` when routing customers to the retention team.
 
 ---
 
