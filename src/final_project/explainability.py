@@ -103,6 +103,85 @@ def extract_tree_estimator(model: Any) -> Any:
     return model
 
 
+def _compute_shap_matrix(model: Any, X: pd.DataFrame) -> tuple[np.ndarray, float, Any]:
+    """Compute SHAP values matrix, base value, and Explanation object for any model."""
+    estimator = extract_tree_estimator(model)
+    feature_names = list(X.columns) if isinstance(X, pd.DataFrame) else None
+    data_mat = X.to_numpy() if isinstance(X, pd.DataFrame) else np.array(X)
+
+    # 1. Try TreeExplainer first (Random Forest, LightGBM, XGBoost)
+    try:
+        explainer = shap.TreeExplainer(estimator)
+        exp = explainer(X)
+        if exp.values.ndim == 3:
+            exp_class1 = exp[:, :, 1]
+            base_val = (
+                float(exp.base_values[0, 1])
+                if hasattr(exp.base_values, "ndim") and exp.base_values.ndim > 1
+                else float(exp.base_values[0])
+            )
+        else:
+            exp_class1 = exp
+            base_val = (
+                float(exp.base_values[0])
+                if hasattr(exp.base_values, "__len__")
+                else float(exp.base_values)
+            )
+        return exp_class1.values, base_val, exp_class1
+    except Exception:
+        pass
+
+    # 2. Linear models / Pipelines with LogisticRegression
+    clf = estimator
+    scaler = None
+    if hasattr(model, "named_steps"):
+        clf = model.named_steps.get("classifier", estimator)
+        scaler = model.named_steps.get("scaler", None)
+
+    if hasattr(clf, "coef_"):
+        if scaler is not None:
+            X_scaled = scaler.transform(data_mat)
+            ref_mean = np.zeros(data_mat.shape[1])
+        else:
+            X_scaled = data_mat
+            ref_mean = np.mean(X_scaled, axis=0)
+
+        coefs = clf.coef_[0]
+        shap_vals = (X_scaled - ref_mean) * coefs
+        intercept = float(clf.intercept_[0]) if hasattr(clf, "intercept_") else 0.0
+        exp_obj = shap.Explanation(
+            values=shap_vals,
+            base_values=intercept,
+            data=data_mat,
+            feature_names=feature_names,
+        )
+        return shap_vals, intercept, exp_obj
+
+    # 3. Model-agnostic sensitivity / perturbation attribution for Ensembles / Neural Nets
+    n_samples, n_feats = data_mat.shape
+    baseline_prob = 0.5
+    base_preds = np.full(n_samples, 0.5)
+    if hasattr(model, "predict_proba"):
+        base_preds = model.predict_proba(data_mat)[:, 1]
+        baseline_prob = float(np.mean(base_preds))
+
+    shap_vals = np.zeros((n_samples, n_feats))
+    for j in range(n_feats):
+        X_perturbed = data_mat.copy()
+        X_perturbed[:, j] = 0.0
+        if hasattr(model, "predict_proba"):
+            p_perturbed = model.predict_proba(X_perturbed)[:, 1]
+            shap_vals[:, j] = base_preds - p_perturbed
+
+    exp_obj = shap.Explanation(
+        values=shap_vals,
+        base_values=baseline_prob,
+        data=data_mat,
+        feature_names=feature_names,
+    )
+    return shap_vals, baseline_prob, exp_obj
+
+
 def run_explanation(
     data_dir: Path | str = "data/processed",
     model_path: Path | str = "models/model.joblib",
@@ -145,16 +224,7 @@ def run_explanation(
     else:
         X_sample, y_sample = X_test, y_test
 
-    explainer = shap.TreeExplainer(estimator)
-    explanation = explainer(X_sample)
-
-    # Handle multi-class / binary 3D SHAP explanation arrays
-    if explanation.values.ndim == 3:
-        exp_class1 = explanation[:, :, 1]
-    else:
-        exp_class1 = explanation
-
-    shap_matrix = exp_class1.values
+    shap_matrix, _, exp_class1 = _compute_shap_matrix(model, X_sample)
     feature_names = list(X_sample.columns)
 
     grouped_df = group_shap_by_parent_features(shap_matrix, feature_names)
@@ -301,24 +371,8 @@ def explain_customer_instance(
     else:
         churn_prob = 0.0
 
-    explainer = shap.TreeExplainer(estimator)
-    explanation = explainer(df)
-
-    # Extract single instance values and base_value for positive churn class
-    if explanation.values.ndim == 3:
-        shap_vals = explanation.values[0, :, 1]
-        base_val = (
-            float(explanation.base_values[0, 1])
-            if hasattr(explanation.base_values, "ndim") and explanation.base_values.ndim > 1
-            else float(explanation.base_values[0])
-        )
-    else:
-        shap_vals = explanation.values[0, :]
-        base_val = (
-            float(explanation.base_values[0])
-            if hasattr(explanation.base_values, "__len__")
-            else float(explanation.base_values)
-        )
+    shap_matrix, base_val, _ = _compute_shap_matrix(model, df)
+    shap_vals = shap_matrix[0]
 
     raw_shap_values = {
         feat: float(shap_vals[i]) for i, feat in enumerate(feature_names)

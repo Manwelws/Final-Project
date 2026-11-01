@@ -173,6 +173,38 @@ class StreamingBatchEngine:
         return weekly_batches
 
 
+def _safe_fit_with_sample_weights(
+    model: Any,
+    X: pd.DataFrame | np.ndarray,
+    y: np.ndarray,
+    sample_weights: np.ndarray | None = None,
+) -> None:
+    """Fit model with sample weights if supported, gracefully falling back for pipelines or unweighted estimators."""
+    if sample_weights is None:
+        model.fit(X, y)
+        return
+
+    # Check for Pipeline
+    if hasattr(model, "named_steps"):
+        step_names = list(model.named_steps.keys())
+        clf_name = step_names[-1]
+        try:
+            model.fit(X, y, **{f"{clf_name}__sample_weight": sample_weights})
+            return
+        except (TypeError, ValueError):
+            pass
+
+    # Direct fit with sample_weight
+    try:
+        model.fit(X, y, sample_weight=sample_weights)
+        return
+    except (TypeError, ValueError):
+        pass
+
+    # Unweighted fallback
+    model.fit(X, y)
+
+
 class SimulationRunner:
     """Orchestrates end-to-end streaming retraining simulation."""
 
@@ -426,7 +458,7 @@ class SimulationRunner:
                 )
 
                 model_retrain = clone(base_production_model)
-                model_retrain.fit(X_avail, y_avail, sample_weight=sample_weights)
+                _safe_fit_with_sample_weights(model_retrain, X_avail, y_avail, sample_weights)
 
                 y_ret_pred_recent = model_retrain.predict_proba(X_recent)[:, 1]
                 auc_ret_recent = float(roc_auc_score(y_recent, y_ret_pred_recent))

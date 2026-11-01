@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from final_project.dashboard.state import load_mlflow_runs
+from final_project.dashboard.state import load_mlflow_runs, load_metadata
 from final_project.dashboard.styles import (
     apply_custom_styles,
     render_hero,
@@ -60,10 +60,15 @@ def generate_parameter_scatter(
         hover_dict["tags.balanced"] = True
 
     color_map = {
+        "STACKING_ENSEMBLE": "#EC4899",
+        "VOTING_ENSEMBLE": "#8B5CF6",
+        "LOGISTIC_REGRESSION": "#10B981",
+        "BAGGED_LOGISTIC": "#14B8A6",
         "LIGHTGBM": "#3B82F6",
-        "XGBOOST": "#8B5CF6",
-        "RANDOM_FOREST": "#10B981",
-        "RANDOMFOREST": "#10B981",
+        "XGBOOST": "#F59E0B",
+        "RANDOM_FOREST": "#6366F1",
+        "RANDOMFOREST": "#6366F1",
+        "MLP": "#EF4444",
         "UNKNOWN": "#9CA3AF",
     }
 
@@ -113,10 +118,15 @@ def generate_algorithm_comparison_box(df: pd.DataFrame) -> go.Figure:
         y=metric_col,
         color="Algorithm",
         color_discrete_map={
+            "STACKING_ENSEMBLE": "#EC4899",
+            "VOTING_ENSEMBLE": "#8B5CF6",
+            "LOGISTIC_REGRESSION": "#10B981",
+            "BAGGED_LOGISTIC": "#14B8A6",
             "LIGHTGBM": "#3B82F6",
-            "XGBOOST": "#8B5CF6",
-            "RANDOM_FOREST": "#10B981",
-            "RANDOMFOREST": "#10B981",
+            "XGBOOST": "#F59E0B",
+            "RANDOM_FOREST": "#6366F1",
+            "RANDOMFOREST": "#6366F1",
+            "MLP": "#EF4444",
             "UNKNOWN": "#9CA3AF",
         },
         points="all",
@@ -156,6 +166,10 @@ def render_experiment_hub_page() -> None:
     best_run = runs_df.loc[runs_df["metrics.cv_roc_auc"].idxmax()]
     winning_algo = str(best_run.get("tags.algorithm", "LightGBM")).upper()
 
+    meta = load_metadata()
+    prod_algo = meta.get("algorithm", "RandomForestClassifier")
+    prod_auc = meta.get("cv_auc_mean", 0.8474)
+
     m_col1, m_col2, m_col3, m_col4 = st.columns(4)
     with m_col1:
         render_metric_card(
@@ -167,15 +181,15 @@ def render_experiment_hub_page() -> None:
         )
     with m_col2:
         render_metric_card(
-            label="Peak CV ROC-AUC",
+            label="Peak Tuning ROC-AUC",
             value=f"{best_auc:.4f}",
-            delta="+0.0160 vs baseline",
+            delta=f"+{(best_auc - prod_auc):.4f} vs deployed",
             delta_variant="positive",
-            subtext="5-Fold Stratified CV",
+            subtext="Stratified 5-Fold CV",
         )
     with m_col3:
         render_metric_card(
-            label="Winning Architecture",
+            label="Tuning Champion",
             value=winning_algo,
             delta="Optimal Bayes Trial",
             delta_variant="positive",
@@ -183,14 +197,18 @@ def render_experiment_hub_page() -> None:
         )
     with m_col4:
         render_metric_card(
-            label="Optuna Pruning Efficiency",
-            value=f"{(pruned_trials / total_trials * 100):.1f}%",
-            delta="Compute Budget Saved",
-            delta_variant="positive",
-            subtext="MedianPruner (n_startup=5)",
+            label="Active Deployed Model",
+            value=prod_algo.replace("Classifier", ""),
+            delta=f"ROC-AUC: {prod_auc:.4f}",
+            delta_variant="neutral",
+            subtext="Production Baseline",
         )
 
-    st.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin: 1.5rem 0;'>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
+    st.info(
+        f"🏛️ **Model Governance Status:** Active production model serving live inference is **`{prod_algo}`** (CV ROC-AUC: `{prod_auc:.4f}`). "
+        f"The hyperparameter optimization study tested candidate architectures and identified **`{winning_algo}`** as the highest-performing architecture (Peak ROC-AUC: `{best_auc:.4f}`)."
+    )
 
     # 3. Interactive Filter Toolbar
     f_col1, f_col2, f_col3 = st.columns([1, 1, 1.2])

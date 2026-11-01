@@ -35,10 +35,11 @@ def run_training(
     tune: bool = False,
     n_trials: int = 50,
     experiment_name: str = "churn_retraining_optimization",
-    tracking_uri: str = "file:./mlruns",
+    tracking_uri: str = "sqlite:///mlflow.db",
     test_size: float = 0.20,
     cv_folds: int = 5,
     random_state: int = 42,
+    algorithms: list[str] | None = None,
 ) -> PipelineRunSummary:
     """Orchestrate training of candidate models or run Bayesian tuning, persisting model and metadata."""
     data_path = Path(data_dir)
@@ -69,6 +70,7 @@ def run_training(
             experiment_name=experiment_name,
             tracking_uri=tracking_uri,
             random_state=random_state,
+            algorithms=algorithms,
         )
 
         final_model = tuning_res.best_model

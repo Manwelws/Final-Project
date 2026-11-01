@@ -112,25 +112,44 @@ def load_feature_psi_matrix(
 def generate_mock_mlflow_runs(n_trials: int = 50, seed: int = 42) -> pd.DataFrame:
     """Generate realistic Optuna tuning trial runs matching the pipeline search space."""
     rng = np.random.RandomState(seed)
-    algos = ["lightgbm", "xgboost", "random_forest"]
+    algos = [
+        "stacking_ensemble",
+        "voting_ensemble",
+        "logistic_regression",
+        "bagged_logistic",
+        "lightgbm",
+        "random_forest",
+        "xgboost",
+        "mlp",
+    ]
     records = []
+
+    base_map = {
+        "stacking_ensemble": 0.8599,
+        "voting_ensemble": 0.8590,
+        "logistic_regression": 0.8576,
+        "bagged_logistic": 0.8575,
+        "lightgbm": 0.8514,
+        "random_forest": 0.8471,
+        "xgboost": 0.8401,
+        "mlp": 0.7973,
+    }
 
     for trial_idx in range(n_trials):
         algo = algos[trial_idx % len(algos)]
         balanced = bool(trial_idx % 2 == 0)
-        is_pruned = bool(trial_idx > 5 and rng.rand() < 0.28)
+        is_pruned = bool(trial_idx > 5 and rng.rand() < 0.25)
 
-        # Baseline performance per algorithm
-        base_auc = 0.852 if algo == "lightgbm" else (0.848 if algo == "xgboost" else 0.842)
-        noise = rng.normal(0.0, 0.008)
+        base_auc = base_map.get(algo, 0.845)
+        noise = rng.normal(0.0, 0.005)
         penalty = -0.04 if is_pruned else 0.0
-        cv_auc = float(np.clip(base_auc + noise + penalty, 0.78, 0.865))
-        cv_std = float(rng.uniform(0.007, 0.015))
-        cv_pr = float(np.clip(cv_auc * 0.74 + rng.normal(0, 0.01), 0.58, 0.66))
+        cv_auc = float(np.clip(base_auc + noise + penalty, 0.75, 0.865))
+        cv_std = float(rng.uniform(0.006, 0.012))
+        cv_pr = float(np.clip(cv_auc * 0.74 + rng.normal(0, 0.008), 0.58, 0.67))
 
-        lr = float(np.round(10 ** rng.uniform(-2.5, -0.6), 4)) if algo != "random_forest" else np.nan
-        n_est = int(rng.choice([50, 100, 150, 200, 250, 300]))
-        max_d = int(rng.choice([3, 4, 5, 6, 8, 10]))
+        lr = float(np.round(10 ** rng.uniform(-2.5, -0.6), 4)) if algo in ("lightgbm", "xgboost") else np.nan
+        n_est = int(rng.choice([50, 100, 150, 200, 250, 300])) if "ensemble" in algo or "forest" in algo or algo in ("lightgbm", "xgboost") else np.nan
+        max_d = int(rng.choice([3, 4, 5, 6, 8, 10])) if "ensemble" in algo or "forest" in algo or algo in ("lightgbm", "xgboost") else np.nan
         num_leaves = int(rng.choice([15, 31, 63])) if algo == "lightgbm" else np.nan
 
         records.append({
@@ -176,6 +195,10 @@ def load_mlflow_runs(
         if exp is not None:
             runs_df = mlflow.search_runs(experiment_ids=[exp.experiment_id])
             if not runs_df.empty:
+                if "tags.mlflow.runName" in runs_df.columns and "run_name" not in runs_df.columns:
+                    runs_df["run_name"] = runs_df["tags.mlflow.runName"]
+                elif "run_name" not in runs_df.columns:
+                    runs_df["run_name"] = runs_df["run_id"]
                 return runs_df
     except Exception:
         pass

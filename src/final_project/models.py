@@ -3,8 +3,18 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import (
+    BaggingClassifier,
+    RandomForestClassifier,
+    StackingClassifier,
+    VotingClassifier,
+)
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, cross_val_score, cross_validate
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 
@@ -45,7 +55,7 @@ def get_candidate_model(
     random_state: int = 42,
     **kwargs: Any,
 ) -> BaseEstimator:
-    """Instantiate a tree-based candidate classifier with native class weighting."""
+    """Instantiate a tree-based, linear, neural, or ensemble candidate classifier with class weighting."""
     normalized_name = name.lower().replace("-", "_").replace(" ", "_")
 
     if normalized_name in ("random_forest", "rf"):
@@ -78,9 +88,148 @@ def get_candidate_model(
             **kwargs,
         )
 
+    elif normalized_name in ("logistic_regression", "lr", "logistic"):
+        class_weight = "balanced" if balanced else None
+        max_iter = kwargs.pop("max_iter", 1000)
+        c_val = kwargs.pop("C", 1.0)
+        return Pipeline([
+            ("scaler", StandardScaler()),
+            (
+                "classifier",
+                LogisticRegression(
+                    C=c_val,
+                    max_iter=max_iter,
+                    class_weight=class_weight,
+                    random_state=random_state,
+                    **kwargs,
+                ),
+            ),
+        ])
+
+    elif normalized_name in ("bagged_logistic", "bagged_lr"):
+        class_weight = "balanced" if balanced else None
+        n_estimators = kwargs.pop("n_estimators", 30)
+        base_lr = Pipeline([
+            ("scaler", StandardScaler()),
+            (
+                "classifier",
+                LogisticRegression(
+                    max_iter=1000,
+                    class_weight=class_weight,
+                    random_state=random_state,
+                    **kwargs,
+                ),
+            ),
+        ])
+        return BaggingClassifier(
+            estimator=base_lr,
+            n_estimators=n_estimators,
+            random_state=random_state,
+        )
+
+    elif normalized_name in ("mlp", "neural_network", "mlp_classifier"):
+        hidden_layer_sizes = kwargs.pop("hidden_layer_sizes", (64, 32))
+        max_iter = kwargs.pop("max_iter", 500)
+        alpha = kwargs.pop("alpha", 0.001)
+        return Pipeline([
+            ("scaler", StandardScaler()),
+            (
+                "classifier",
+                MLPClassifier(
+                    hidden_layer_sizes=hidden_layer_sizes,
+                    max_iter=max_iter,
+                    alpha=alpha,
+                    early_stopping=True,
+                    random_state=random_state,
+                    **kwargs,
+                ),
+            ),
+        ])
+
+    elif normalized_name in ("knn", "kneighbors"):
+        n_neighbors = kwargs.pop("n_neighbors", 15)
+        return Pipeline([
+            ("scaler", StandardScaler()),
+            (
+                "classifier",
+                KNeighborsClassifier(
+                    n_neighbors=n_neighbors,
+                    **kwargs,
+                ),
+            ),
+        ])
+
+    elif normalized_name in ("voting_ensemble", "voting"):
+        class_weight = "balanced" if balanced else None
+        lgb_est = LGBMClassifier(
+            random_state=random_state,
+            class_weight=class_weight,
+            verbose=-1,
+        )
+        lr_est = Pipeline([
+            ("scaler", StandardScaler()),
+            (
+                "classifier",
+                LogisticRegression(
+                    max_iter=1000,
+                    class_weight=class_weight,
+                    random_state=random_state,
+                ),
+            ),
+        ])
+        rf_est = RandomForestClassifier(
+            random_state=random_state,
+            class_weight=class_weight,
+        )
+        return VotingClassifier(
+            estimators=[
+                ("lgb", lgb_est),
+                ("lr", lr_est),
+                ("rf", rf_est),
+            ],
+            voting="soft",
+            **kwargs,
+        )
+
+    elif normalized_name in ("stacking_ensemble", "stacking"):
+        class_weight = "balanced" if balanced else None
+        lgb_est = LGBMClassifier(
+            random_state=random_state,
+            class_weight=class_weight,
+            verbose=-1,
+        )
+        lr_est = Pipeline([
+            ("scaler", StandardScaler()),
+            (
+                "classifier",
+                LogisticRegression(
+                    max_iter=1000,
+                    class_weight=class_weight,
+                    random_state=random_state,
+                ),
+            ),
+        ])
+        rf_est = RandomForestClassifier(
+            random_state=random_state,
+            class_weight=class_weight,
+        )
+        final_est = LogisticRegression(random_state=random_state)
+        cv_splits = kwargs.pop("cv", 3)
+        return StackingClassifier(
+            estimators=[
+                ("lgb", lgb_est),
+                ("lr", lr_est),
+                ("rf", rf_est),
+            ],
+            final_estimator=final_est,
+            cv=cv_splits,
+            **kwargs,
+        )
+
     else:
         raise ValueError(
-            f"Unsupported algorithm '{name}'. Choose from 'random_forest', 'lightgbm', 'xgboost'."
+            f"Unsupported algorithm '{name}'. Choose from 'random_forest', 'lightgbm', 'xgboost', "
+            f"'logistic_regression', 'bagged_logistic', 'mlp', 'voting_ensemble', 'stacking_ensemble'."
         )
 
 
@@ -187,6 +336,18 @@ def benchmark_candidates(
         "lgb": "LightGBM",
         "xgboost": "XGBoost",
         "xgb": "XGBoost",
+        "logistic_regression": "Logistic Regression (Scaled)",
+        "logistic": "Logistic Regression (Scaled)",
+        "lr": "Logistic Regression (Scaled)",
+        "bagged_logistic": "Bagged Logistic Regression",
+        "bagged_lr": "Bagged Logistic Regression",
+        "mlp": "MLP Neural Network (Scaled)",
+        "neural_network": "MLP Neural Network (Scaled)",
+        "knn": "K-Nearest Neighbors (Scaled)",
+        "voting_ensemble": "Soft Voting Ensemble (Tree + Linear)",
+        "voting": "Soft Voting Ensemble (Tree + Linear)",
+        "stacking_ensemble": "Stacking Ensemble (Tree + Linear -> LR)",
+        "stacking": "Stacking Ensemble (Tree + Linear -> LR)",
     }
 
     records = []
