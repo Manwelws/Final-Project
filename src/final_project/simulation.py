@@ -56,9 +56,13 @@ class DualDriftMonitor:
         self,
         auc_drop_threshold: float = 0.05,
         drift_policy: DriftPolicy | None = None,
+        retraining_policy: RetrainingPolicy | None = None,
     ):
         self.auc_drop_threshold = auc_drop_threshold
         self.drift_policy = drift_policy or DriftPolicy()
+        self.retraining_policy = retraining_policy or RetrainingPolicy(
+            auc_drop_threshold=auc_drop_threshold
+        )
         self.best_recent_auc: float | None = None
 
     def evaluate_unsupervised_drift(
@@ -81,22 +85,15 @@ class DualDriftMonitor:
         self,
         recent_auc: float,
         model_retrain_exists: bool,
+        n_labeled: int | None = None,
     ) -> tuple[bool, str]:
         """Evaluate if model performance has degraded beyond tolerance."""
-        if not model_retrain_exists:
-            return True, "initial training"
-
-        if (
-            self.best_recent_auc is not None
-            and recent_auc < self.best_recent_auc - self.auc_drop_threshold
-        ):
-            reason = (
-                f"performance decay: recent AUC {recent_auc:.4f} < "
-                f"best {self.best_recent_auc:.4f} - {self.auc_drop_threshold}"
-            )
-            return True, reason
-
-        return False, "monitoring"
+        return self.retraining_policy.should_retrain(
+            recent_auc=recent_auc,
+            best_recent_auc=self.best_recent_auc,
+            model_exists=model_retrain_exists,
+            n_labeled=n_labeled,
+        )
 
     def update_best_auc(self, new_auc: float) -> None:
         """Update historical peak performance benchmark."""
@@ -205,7 +202,16 @@ class SimulationRunner:
         self.save_artifacts = save_artifacts
         self.verbose = verbose
 
-        self.monitor = monitor or DualDriftMonitor(auc_drop_threshold=self.config.auc_drop_threshold)
+        retrain_policy = RetrainingPolicy(
+            auc_drop_threshold=self.config.auc_drop_threshold,
+            min_labels_for_retrain=self.config.min_labels_for_retrain,
+            recent_window_weeks=self.config.recent_window_weeks,
+            sample_decay_rate=self.config.sample_decay_rate,
+        )
+        self.monitor = monitor or DualDriftMonitor(
+            auc_drop_threshold=self.config.auc_drop_threshold,
+            retraining_policy=retrain_policy,
+        )
         self.engine = engine or StreamingBatchEngine(self.config)
 
     def _log(self, message: str) -> None:

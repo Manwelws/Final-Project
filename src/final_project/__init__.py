@@ -1,3 +1,10 @@
+"""Production Customer Churn Prediction & Automated Retraining System."""
+
+from __future__ import annotations
+
+__version__ = "0.1.0"
+
+from final_project.cli import main
 from final_project.pipeline import run_training, PipelineRunSummary
 from final_project.data import load_and_split_data, load_features_and_target, DataSplit
 from final_project.models import (
@@ -53,8 +60,23 @@ from final_project.simulation import (
     StreamingBatchEngine,
     run_simulation,
 )
+from final_project.serving import (
+    app,
+    CustomerProfileRaw,
+    CustomerFeaturesVector,
+    CustomerPredictionRequest,
+    SinglePredictionResponse,
+    BatchPredictionRequest,
+    BatchPredictionResponse,
+    CustomerExplainResponse,
+    HealthResponse,
+    encode_raw_profile,
+    encode_batch_profiles,
+)
 
 __all__ = [
+    "__version__",
+    "main",
     "run_training",
     "PipelineRunSummary",
     "load_and_split_data",
@@ -98,4 +120,15 @@ __all__ = [
     "DualDriftMonitor",
     "StreamingBatchEngine",
     "run_simulation",
+    "app",
+    "CustomerProfileRaw",
+    "CustomerFeaturesVector",
+    "CustomerPredictionRequest",
+    "SinglePredictionResponse",
+    "BatchPredictionRequest",
+    "BatchPredictionResponse",
+    "CustomerExplainResponse",
+    "HealthResponse",
+    "encode_raw_profile",
+    "encode_batch_profiles",
 ]
