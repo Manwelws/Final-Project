@@ -1,5 +1,7 @@
 """Domain value objects for business cost and threshold calculation."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 
@@ -23,3 +25,18 @@ class CostMatrix:
         """Alias for compute_loss."""
         return self.compute_loss(fn, fp)
 
+    def compute_net_savings(self, default_loss: float, optimal_loss: float) -> float:
+        """Calculate dollar savings achieved by cost-optimal threshold over default 0.50 cutoff."""
+        return float(default_loss - optimal_loss)
+
+    def compute_loss_reduction_pct(self, default_loss: float, optimal_loss: float) -> float:
+        """Calculate percentage loss reduction relative to baseline default cutoff."""
+        if default_loss <= 0.0:
+            return 0.0
+        return float((default_loss - optimal_loss) / default_loss * 100.0)
+
+    def compute_campaign_roi(self, gross_revenue_saved: float, campaign_cost: float) -> float:
+        """Calculate campaign return-on-investment multiple."""
+        if campaign_cost <= 0.0:
+            return 0.0
+        return float(gross_revenue_saved / campaign_cost)

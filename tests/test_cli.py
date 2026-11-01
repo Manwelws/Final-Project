@@ -97,3 +97,32 @@ def test_cli_simulate_command_mock(monkeypatch, capsys):
     assert "Simulation Completed Successfully" in captured.out
 
 
+def test_cli_serve_help(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["serve", "--help"])
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    assert "--port" in captured.out
+    assert "--host" in captured.out
+    assert "--reload" in captured.out
+
+
+def test_cli_serve_launch_mock(monkeypatch):
+    import uvicorn
+
+    called_kwargs = {}
+
+    def fake_run(app_target, **kwargs):
+        called_kwargs["app"] = app_target
+        called_kwargs.update(kwargs)
+        return None
+
+    monkeypatch.setattr(uvicorn, "run", fake_run)
+    exit_code = main(["serve", "--port", "8080", "--host", "127.0.0.1", "--reload"])
+    assert exit_code == 0
+    assert called_kwargs["port"] == 8080
+    assert called_kwargs["host"] == "127.0.0.1"
+    assert called_kwargs["reload"] is True
+
+
+

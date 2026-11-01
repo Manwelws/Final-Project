@@ -223,6 +223,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run Streamlit in headless mode without spawning local browser window",
     )
 
+    # Serve subcommand
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Launch the high-performance FastAPI inference microservice",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to serve FastAPI inference API (default: 8000)",
+    )
+    serve_parser.add_argument(
+        "--host",
+        type=str,
+        default="0.0.0.0",
+        help="Host address to bind FastAPI API (default: 0.0.0.0)",
+    )
+    serve_parser.add_argument(
+        "--reload",
+        action="store_true",
+        default=False,
+        help="Enable auto-reload on code modifications",
+    )
+
     # Simulate subcommand
     sim_parser = subparsers.add_parser(
         "simulate",
@@ -423,6 +447,23 @@ def main(argv: list[str] | None = None) -> int:
             return subprocess.call(cmd)
         except KeyboardInterrupt:
             print("\nDashboard server terminated by user.")
+            return 0
+
+    if args.subcommand == "serve":
+        import uvicorn
+        from final_project.serving.api import app as fastapi_app
+
+        print(f"Starting ChurnOps REST API inference server on http://{args.host}:{args.port}...")
+        try:
+            uvicorn.run(
+                "final_project.serving.api:app" if args.reload else fastapi_app,
+                host=args.host,
+                port=args.port,
+                reload=args.reload,
+            )
+            return 0
+        except KeyboardInterrupt:
+            print("\nServing server terminated by user.")
             return 0
 
     if args.subcommand == "simulate":

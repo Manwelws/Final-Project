@@ -6,7 +6,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B.svg)](https://streamlit.io)
 [![MLflow](https://img.shields.io/badge/MLflow-Tracking-0194E2.svg)](https://mlflow.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com)
-[![Test Suite](https://img.shields.io/badge/tests-65%2F65%20passing-brightgreen.svg)](tests/)
+[![Test Suite](https://img.shields.io/badge/tests-75%2F75%20passing-brightgreen.svg)](tests/)
 
 An enterprise-grade, closed-loop machine learning engineering system designed to detect telecom customer churn, optimize financial intervention economics, explain predictions to frontline retention specialists in real time, and continuously retrain models under covariate and concept drift.
 
@@ -595,7 +595,10 @@ Open **`http://localhost:8501`** in your browser.
 ### 3. Launch the FastAPI Prediction Service
 
 ```bash
-# Start FastAPI REST API with Uvicorn
+# Start FastAPI REST API via CLI subcommand
+uv run churn serve --port 8000
+
+# Or run directly via Uvicorn with auto-reload
 uv run uvicorn final_project.serving.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 Interactive Swagger API documentation is available at **`http://localhost:8000/docs`**.
@@ -618,7 +621,7 @@ python notebooks/simulate_retraining.py
 ### 6. Run Automated Test Suite
 
 ```bash
-# Run all 65 automated tests
+# Run all 75 automated tests
 uv run pytest
 ```
 
@@ -645,7 +648,10 @@ uv run churn explain --max-samples 150 --output-dir reports/figures
 # 5. Run weekly streaming retraining & drift simulation
 uv run churn simulate --n-weeks 8
 
-# 6. Launch interactive Streamlit Operations Dashboard
+# 6. Launch high-performance FastAPI inference microservice
+uv run churn serve --port 8000 --host 0.0.0.0
+
+# 7. Launch interactive Streamlit Operations Dashboard
 uv run churn dashboard --port 8501 --host 0.0.0.0
 ```
 
