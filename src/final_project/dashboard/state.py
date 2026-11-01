@@ -155,7 +155,7 @@ def generate_mock_mlflow_runs(n_trials: int = 50, seed: int = 42) -> pd.DataFram
 
 @st.cache_data(show_spinner=False)
 def load_mlflow_runs(
-    tracking_uri: str = "file:./mlruns",
+    tracking_uri: str = "sqlite:///mlflow.db",
     experiment_name: str = "churn_retraining_optimization",
 ) -> pd.DataFrame:
     """Retrieve MLflow experiment runs or fall back to curated trial benchmark dataset."""
@@ -163,18 +163,25 @@ def load_mlflow_runs(
         import mlflow
         from pathlib import Path
 
+        db_file = Path("mlflow.db")
         mlflow_dir = Path("mlruns")
-        if mlflow_dir.exists():
-            mlflow.set_tracking_uri(tracking_uri)
-            exp = mlflow.get_experiment_by_name(experiment_name)
-            if exp is not None:
-                runs_df = mlflow.search_runs(experiment_ids=[exp.experiment_id])
-                if not runs_df.empty:
-                    return runs_df
+
+        # Determine effective tracking URI
+        effective_uri = tracking_uri
+        if not db_file.exists() and mlflow_dir.exists():
+            effective_uri = "file:./mlruns"
+
+        mlflow.set_tracking_uri(effective_uri)
+        exp = mlflow.get_experiment_by_name(experiment_name)
+        if exp is not None:
+            runs_df = mlflow.search_runs(experiment_ids=[exp.experiment_id])
+            if not runs_df.empty:
+                return runs_df
     except Exception:
         pass
 
     return generate_mock_mlflow_runs()
+
 
 
 def calculate_confusion_at_cutoff(

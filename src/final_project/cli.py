@@ -81,8 +81,8 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument(
         "--tracking-uri",
         type=str,
-        default="file:./mlruns",
-        help="MLflow tracking URI (default: file:./mlruns)",
+        default="sqlite:///mlflow.db",
+        help="MLflow tracking URI (default: sqlite:///mlflow.db)",
     )
 
     # Benchmark subcommand

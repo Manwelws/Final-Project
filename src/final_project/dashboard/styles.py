@@ -268,13 +268,13 @@ def style_plotly_figure(fig: go.Figure) -> go.Figure:
 def render_hero(title: str, subtitle: str, badge: str | None = None) -> None:
     """Render a modern hero header banner with title, subtitle and optional pill badge."""
     badge_html = f'<div class="hero-pill">{badge}</div>' if badge else ""
-    html = f"""
-    <div class="hero-wrapper">
-        {badge_html}
-        <div class="hero-title">{title}</div>
-        <div class="hero-subtitle">{subtitle}</div>
-    </div>
-    """
+    html = (
+        f'<div class="hero-wrapper">'
+        f'{badge_html}'
+        f'<div class="hero-title">{title}</div>'
+        f'<div class="hero-subtitle">{subtitle}</div>'
+        f'</div>'
+    )
     st.markdown(html, unsafe_allow_html=True)
 
 
@@ -298,20 +298,21 @@ def render_metric_card(
     subtext_html = f'<div class="metric-subtext">{effective_subtext}</div>' if effective_subtext else ""
     icon_html = f"<span>{icon}</span>" if icon else ""
 
-    html = f"""
-    <div class="glass-card">
-        <div class="metric-container">
-            <div class="metric-header">
-                <span class="metric-label">{label}</span>
-                {icon_html}
-            </div>
-            <div class="metric-value">{value}</div>
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.25rem;">
-                {delta_html}
-            </div>
-            {subtext_html}
-        </div>
-    </div>
-    """
+    html = (
+        f'<div class="glass-card">'
+        f'<div class="metric-container">'
+        f'<div class="metric-header">'
+        f'<span class="metric-label">{label}</span>'
+        f'{icon_html}'
+        f'</div>'
+        f'<div class="metric-value">{value}</div>'
+        f'<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.25rem;">'
+        f'{delta_html}'
+        f'</div>'
+        f'{subtext_html}'
+        f'</div>'
+        f'</div>'
+    )
     st.markdown(html, unsafe_allow_html=True)
+
 
