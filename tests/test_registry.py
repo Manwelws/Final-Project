@@ -72,3 +72,24 @@ def test_model_bundle_missing_feature_validation():
     df_bad = pd.DataFrame([[1.0, 2.0]], columns=["f1", "f2"])
     with pytest.raises(ValueError, match="missing required features"):
         bundle.predict_risk(df_bad)
+
+
+def test_model_bundle_sha256_verification_and_tamper_detection(tmp_path):
+    clf = RandomForestClassifier(n_estimators=5, random_state=42)
+    clf.fit([[1, 2], [3, 4]], [0, 1])
+    meta = ModelMetadata(algorithm="RandomForestClassifier", features=["f1", "f2"])
+    bundle = ModelBundle(model=clf, metadata=meta)
+
+    bundle.save(tmp_path)
+    loaded = ModelBundle.load(tmp_path)
+    assert loaded.metadata.model_sha256 != ""
+
+    # Tamper with the artifact file
+    artifact_file = tmp_path / "model.joblib"
+    with open(artifact_file, "ab") as f:
+        f.write(b"tampered_bytes")
+
+    # Loading tampered artifact must fail loudly with ValueError
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        ModelBundle.load(tmp_path)
+

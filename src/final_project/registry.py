@@ -3,10 +3,20 @@
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 import json
+import hashlib
 from typing import Any
 import numpy as np
 import pandas as pd
 import joblib
+
+
+def compute_sha256(filepath: Path | str) -> str:
+    """Compute SHA-256 hex digest of a file."""
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 @dataclass(frozen=True)
@@ -34,6 +44,7 @@ class ModelMetadata:
     test_samples: int = 0
     feature_count: int = 0
     model_artifact: str = "model.joblib"
+    model_sha256: str = ""
     n_trials: int | None = None
     mlflow_experiment_id: str | None = None
     threshold_comparison: dict[str, Any] | None = None
@@ -105,7 +116,7 @@ class ModelBundle:
         model_filename: str | None = None,
         metadata_filename: str = "metadata.json",
     ) -> "ModelBundle":
-        """Load trained model estimator and accompanying metadata from directory."""
+        """Load trained model estimator and accompanying metadata from directory with SHA-256 verification."""
         dir_path = Path(model_dir)
 
         if model_filename is not None:
@@ -122,21 +133,31 @@ class ModelBundle:
                 f"Model artifact not found in {dir_path}. Checked: {[str(p) for p in candidate_paths]}"
             )
 
-        model = joblib.load(model_path)
-
         meta_path = dir_path / metadata_filename
+        metadata: ModelMetadata | None = None
         if meta_path.exists():
             try:
                 metadata = ModelMetadata.load(meta_path)
             except Exception:
-                metadata = ModelMetadata(
-                    algorithm=model.__class__.__name__,
-                    model_artifact=model_path.name,
+                metadata = None
+
+        # Verify SHA-256 before loading untrusted bytecode if hash is recorded in metadata
+        if metadata is not None and metadata.model_sha256:
+            actual_sha256 = compute_sha256(model_path)
+            if actual_sha256 != metadata.model_sha256:
+                raise ValueError(
+                    f"SHA-256 mismatch for model artifact '{model_path.name}'. "
+                    f"Expected: {metadata.model_sha256}, got: {actual_sha256}. "
+                    "Refusing to load untrusted or corrupted artifact."
                 )
-        else:
+
+        model = joblib.load(model_path)
+
+        if metadata is None:
             metadata = ModelMetadata(
                 algorithm=model.__class__.__name__,
                 model_artifact=model_path.name,
+                model_sha256=compute_sha256(model_path),
             )
 
         return cls(model=model, metadata=metadata)
@@ -147,11 +168,18 @@ class ModelBundle:
         model_filename: str = "model.joblib",
         metadata_filename: str = "metadata.json",
     ) -> None:
-        """Persist model artifact and metadata to target directory."""
+        """Persist model artifact and metadata to target directory with calculated SHA-256 hash."""
         dir_path = Path(model_dir)
         dir_path.mkdir(parents=True, exist_ok=True)
-        joblib.dump(self.model, dir_path / model_filename)
-        self.metadata.save(dir_path / metadata_filename)
+        artifact_path = dir_path / model_filename
+        joblib.dump(self.model, artifact_path)
+        sha256_hash = compute_sha256(artifact_path)
+
+        meta_dict = self.metadata.to_dict()
+        meta_dict["model_artifact"] = model_filename
+        meta_dict["model_sha256"] = sha256_hash
+        updated_metadata = ModelMetadata.from_dict(meta_dict)
+        updated_metadata.save(dir_path / metadata_filename)
 
     def predict_risk(self, X: pd.DataFrame | np.ndarray) -> RiskPrediction:
         """Predict churn risk using optimal decision threshold and assign operational risk tiers.

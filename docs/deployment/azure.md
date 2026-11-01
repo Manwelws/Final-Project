@@ -48,6 +48,8 @@ az acr build \
   --image churn-prediction-api:$IMAGE_TAG \
   --file Dockerfile .
 ```
+> [!NOTE]
+> Per ADR 0002 (Decision D4), the production model artifact (`models/model.joblib`) and metadata (`models/metadata.json`) are committed into source control and baked directly into the image. At container startup, `ModelBundle.load` computes the SHA-256 hash of the artifact and validates it against `metadata.json` before deserialization, ensuring zero-trust bytecode integrity.
 
 ---
 
@@ -68,7 +70,8 @@ ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query "passwords[0].val
 ACR_LOGIN_SERVER=$(az acr show --name $ACR_NAME --query loginServer -o tsv)
 ```
 
-### Step 3.3: Deploy the Container App
+### Step 3.3: Deploy the Container App with Decoupled Health Probes
+Configure separate liveness (`/health`) and readiness (`/ready`) HTTP probes:
 ```bash
 az containerapp create \
   --name $CONTAINER_APP_NAME \
@@ -100,7 +103,10 @@ APP_URL=$(az containerapp show \
 echo "Service live at: https://$APP_URL"
 ```
 
-### Step 4.2: Health Check
+### Step 4.2: Health and Readiness Probes
+
+#### Liveness Probe (`GET /health`):
+Lightweight probe that verifies the server process is responsive (always returns 200 OK):
 ```bash
 curl -s -X GET "https://$APP_URL/health" | jq .
 ```
@@ -108,36 +114,85 @@ Expected output:
 ```json
 {
   "status": "healthy",
-  "model_algorithm": "LGBMClassifier",
-  "optimal_threshold": 0.12,
-  "holdout_roc_auc": 0.8528,
-  "holdout_pr_auc": 0.6412,
+  "algorithm": "RandomForestClassifier",
+  "model_algorithm": "RandomForestClassifier",
+  "optimal_threshold": 0.36,
+  "holdout_roc_auc": 0.8436,
+  "holdout_pr_auc": 0.6442,
+  "model_timestamp": "2026-11-01T20:57:46Z",
   "feature_count": 27
 }
 ```
 
+#### Readiness Probe (`GET /ready`):
+Returns 200 OK when the model artifact has passed SHA-256 verification and is ready to score; returns 503 if unloaded:
+```bash
+curl -s -X GET "https://$APP_URL/ready" | jq .
+```
+Expected output:
+```json
+{
+  "status": "ready",
+  "algorithm": "RandomForestClassifier",
+  "optimal_threshold": 0.36
+}
+```
+
 ### Step 4.3: Real-Time Scoring (`POST /predict`)
+Scores a complete raw CRM customer profile against the cost-optimal decision threshold:
 ```bash
 curl -s -X POST "https://$APP_URL/predict" \
   -H "Content-Type: application/json" \
   -d '{
-    "Contract": "Month-to-month",
-    "Internet Service": "Fiber optic",
+    "Gender": "Female",
+    "Senior Citizen": "No",
+    "Partner": "No",
+    "Dependents": "No",
     "Tenure Months": 2.0,
+    "Phone Service": "Yes",
+    "Multiple Lines": "No",
+    "Internet Service": "Fiber optic",
+    "Online Security": "No",
+    "Online Backup": "No",
+    "Device Protection": "No",
+    "Tech Support": "No",
+    "Streaming TV": "Yes",
+    "Streaming Movies": "Yes",
+    "Contract": "Month-to-month",
+    "Paperless Billing": "Yes",
+    "Payment Method": "Electronic check",
     "Monthly Charges": 95.0,
-    "Payment Method": "Electronic check"
+    "Total Charges": 190.0,
+    "CLTV": 3200.0
   }' | jq .
 ```
 
 ### Step 4.4: Frontline Retention Triage (`POST /explain`)
+Returns parent SHAP attributions using the cached explainer:
 ```bash
 curl -s -X POST "https://$APP_URL/explain" \
   -H "Content-Type: application/json" \
   -d '{
-    "Contract": "Month-to-month",
-    "Internet Service": "Fiber optic",
+    "Gender": "Female",
+    "Senior Citizen": "No",
+    "Partner": "No",
+    "Dependents": "No",
     "Tenure Months": 2.0,
-    "Monthly Charges": 95.0
+    "Phone Service": "Yes",
+    "Multiple Lines": "No",
+    "Internet Service": "Fiber optic",
+    "Online Security": "No",
+    "Online Backup": "No",
+    "Device Protection": "No",
+    "Tech Support": "No",
+    "Streaming TV": "Yes",
+    "Streaming Movies": "Yes",
+    "Contract": "Month-to-month",
+    "Paperless Billing": "Yes",
+    "Payment Method": "Electronic check",
+    "Monthly Charges": 95.0,
+    "Total Charges": 190.0,
+    "CLTV": 3200.0
   }' | jq .
 ```
 
