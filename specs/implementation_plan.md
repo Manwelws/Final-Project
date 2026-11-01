@@ -410,13 +410,13 @@ stateDiagram-v2
 
 ---
 
-### Milestone 5: Documentation & Presentation — `[PLANNED]`
+### Milestone 5: Documentation & Presentation — `[COMPLETE]`
 
-- **Status**: Scheduled for final project wrap-up.
+- **Status**: **Delivered**
 - **Deliverables**:
   - Comprehensive `README.md` with system diagrams, quick-start guide, and performance benchmarks.
-  - Architecture Decision Records (`docs/adr/`).
-  - Executive presentation slide deck summarizing methodology, financial optimization findings, and operational deployment.
+  - Architecture Decision Records (`docs/adr/0001-simulator-uses-production-model.md`).
+  - Executive presentation slide deck and defense guide (`docs/presentation.md`) summarizing methodology, financial optimization findings, operational deployment, and anticipated Q&A.
 
 ---
 
