@@ -473,7 +473,11 @@ def render_model_diagnostics_page() -> None:
         meta = load_metadata()
     except Exception as exc:
         logger.error("Failed to load dataset or model artifacts: %s", exc, exc_info=True)
-        st.error(f"Failed to load dataset or model artifacts: {exc}")
+        st.info("ℹ️ No model artifact or cleaned dataset found in `models/` or `data/processed/`. Run `churn train` to generate evaluation artifacts.")
+        return
+
+    if X is None or y is None or len(X) == 0 or bundle is None:
+        st.info("ℹ️ Model artifact or evaluation dataset is empty. Run `churn train` to produce diagnostic benchmarks.")
         return
 
     _, X_test, _, y_test = get_stratified_split(X, y)

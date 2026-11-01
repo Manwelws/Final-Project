@@ -52,7 +52,20 @@ def generate_drift_timeline_chart(drift_df: pd.DataFrame) -> go.Figure:
         secondary_y=False,
     )
 
-    # 2. Never-retrain baseline AUC trace
+    # 2. Historical Best-Ever Live AUC (Threshold Benchmark)
+    if "best_retrain_auc" in drift_df.columns and drift_df["best_retrain_auc"].notna().any():
+        fig.add_trace(
+            go.Scatter(
+                x=weeks,
+                y=drift_df["best_retrain_auc"].tolist(),
+                mode="lines",
+                name="Historical Best Live AUC Benchmark",
+                line=dict(color="#F59E0B", width=2, dash="dot"),
+            ),
+            secondary_y=False,
+        )
+
+    # 3. Never-retrain baseline AUC trace
     fig.add_trace(
         go.Scatter(
             x=weeks,
@@ -214,14 +227,28 @@ def render_drift_monitor_page() -> None:
     psi_matrix = load_feature_psi_matrix()
 
     if drift_df.empty:
-        st.warning("No drift metrics found in `data/drift/drift_metrics.csv`. Please run the simulation first.")
+        st.info("ℹ️ No drift metrics found in `data/drift/drift_metrics.csv`. Run `churn simulate` or `python notebooks/simulate_retraining.py` to produce weekly streaming metrics.")
         return
 
     # 2. Executive Stat Cards
     total_weeks = len(drift_df)
-    retrain_count = int(drift_df["retrained"].sum())
-    max_psi_overall = float(drift_df["psi_max"].max())
+    retrain_count = int(drift_df["retrained"].sum()) if "retrained" in drift_df.columns else 0
+    max_psi_overall = float(drift_df["psi_max"].max()) if "psi_max" in drift_df.columns else 0.0
     latest_auc = drift_df["retrain_model_auc_recent"].dropna().iloc[-1] if not drift_df["retrain_model_auc_recent"].dropna().empty else 0.84
+
+    # Dynamically compute deltas from data
+    retrain_weeks = drift_df[drift_df["retrained"] == True]["week"].tolist() if "retrained" in drift_df.columns else []
+    retrain_delta = f"Weeks {retrain_weeks}" if retrain_weeks else "No retrain events"
+
+    drift_weeks = drift_df[drift_df["psi_status"] == "Significant Shift (Drift Detected)"]["week"].tolist() if "psi_status" in drift_df.columns else []
+    psi_delta = f"Week {drift_weeks[0]} Onset (Drift)" if drift_weeks else "No Significant Drift"
+
+    if "never_retrain_auc_reference" in drift_df.columns and not drift_df["never_retrain_auc_reference"].dropna().empty:
+        never_auc = float(drift_df["never_retrain_auc_reference"].dropna().iloc[-1])
+        auc_diff = latest_auc - never_auc
+        auc_delta = f"{auc_diff:+.3f} vs Never-Retrain"
+    else:
+        auc_delta = "Baseline Unavailable"
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -237,7 +264,7 @@ def render_drift_monitor_page() -> None:
         render_metric_card(
             label="Retraining Triggers",
             value=f"{retrain_count} Events",
-            delta="Weeks [3, 5, 7, 8]",
+            delta=retrain_delta,
             delta_variant="positive",
             subtext="Dual drift monitoring",
             icon="🔄",
@@ -246,8 +273,8 @@ def render_drift_monitor_page() -> None:
         render_metric_card(
             label="Peak Feature PSI",
             value=f"{max_psi_overall:.2f}",
-            delta="Week 5 Onset (Drift)",
-            delta_variant="negative",
+            delta=psi_delta,
+            delta_variant="negative" if drift_weeks else "neutral",
             subtext="Monthly Charges shift",
             icon="⚠️",
         )
@@ -255,8 +282,8 @@ def render_drift_monitor_page() -> None:
         render_metric_card(
             label="Live Retrained AUC",
             value=f"{latest_auc:.4f}",
-            delta="+0.111 vs Never-Retrain",
-            delta_variant="positive",
+            delta=auc_delta,
+            delta_variant="positive" if "never_auc" in locals() and latest_auc >= never_auc else "neutral",
             subtext="Post-drift recovery",
             icon="🎯",
         )

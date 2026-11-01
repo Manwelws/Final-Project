@@ -39,9 +39,11 @@ def check_fastapi_health(url: str = "http://localhost:8000/health") -> bool:
 def render_sidebar_status() -> None:
     """Render persistent sidebar brand header, system metadata, and status indicators."""
     meta = load_metadata()
-    model_algo = meta.get("algorithm", "RandomForestClassifier")
-    optimal_cutoff = meta.get("optimal_threshold", 0.12)
-    feature_count = meta.get("feature_count", 27)
+    model_algo = meta.get("algorithm", "Unloaded")
+    optimal_cutoff = float(meta.get("optimal_threshold", 0.50))
+    feature_count = len(meta.get("features", [])) or 27
+    holdout_auc = float(meta.get("holdout_roc_auc", 0.0))
+    perf_label = f"{holdout_auc:.4f} ROC-AUC" if holdout_auc > 0 else "Uncalibrated"
     api_online = check_fastapi_health()
 
     with st.sidebar:
@@ -85,7 +87,7 @@ def render_sidebar_status() -> None:
             f"""
             <div style="font-size: 0.82rem; color: #9CA3AF; line-height: 1.8;">
                 <div><b>Active Production:</b> <code style="color: #60A5FA;">{model_algo}</code></div>
-                <div><b>Benchmark Champion:</b> <code style="color: #EC4899;">Stacking (0.8599)</code></div>
+                <div><b>Production Holdout:</b> <code style="color: #EC4899;">{perf_label}</code></div>
                 <div><b>Optimal Cutoff:</b> <code style="color: #34D399;">{optimal_cutoff:.2f}</code></div>
                 <div><b>Input Features:</b> <code>{feature_count} numeric</code></div>
                 <div><b>Customer Base:</b> <code>7,043 accounts</code></div>

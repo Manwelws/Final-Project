@@ -355,10 +355,14 @@ def render_retention_triage_page() -> None:
         meta = load_metadata()
     except Exception as exc:
         logger.error("Failed to load production ModelBundle: %s", exc, exc_info=True)
-        st.error(f"Failed to load production ModelBundle: {exc}")
+        st.info("ℹ️ No production model artifact found in `models/`. Run `churn train` to serialize a production bundle before triaging customers.")
         return
 
-    optimal_cutoff = float(meta.get("optimal_threshold", 0.12))
+    if bundle is None:
+        st.info("ℹ️ Production model bundle is not loaded. Run `churn train` to serialize an artifact.")
+        return
+
+    optimal_cutoff = float(meta.get("optimal_threshold", getattr(bundle.metadata, "optimal_threshold", 0.50)))
 
     # Initialize session state for form inputs
     if "triage_profile" not in st.session_state:

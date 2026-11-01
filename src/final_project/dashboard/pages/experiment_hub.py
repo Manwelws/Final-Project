@@ -157,7 +157,7 @@ def render_experiment_hub_page() -> None:
     # 1. Load MLflow Runs
     runs_df = load_mlflow_runs()
     if runs_df.empty:
-        st.info("No MLflow runs found. Run `churn train --tune` to record optimization trials.")
+        st.info("ℹ️ No MLflow runs found. Run `churn train --tune` to record Bayesian hyperparameter optimization trials to the tracking store (`sqlite:///mlflow.db`).")
         return
 
     # 2. Executive Metrics Summary

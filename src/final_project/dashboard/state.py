@@ -117,75 +117,12 @@ def load_feature_psi_matrix(
     return pd.DataFrame(weekly_records)
 
 
-def generate_mock_mlflow_runs(n_trials: int = 50, seed: int = 42) -> pd.DataFrame:
-    """Generate realistic Optuna tuning trial runs matching the pipeline search space."""
-    rng = np.random.RandomState(seed)
-    algos = [
-        "stacking_ensemble",
-        "voting_ensemble",
-        "logistic_regression",
-        "bagged_logistic",
-        "lightgbm",
-        "random_forest",
-        "xgboost",
-        "mlp",
-    ]
-    records = []
-
-    base_map = {
-        "stacking_ensemble": 0.8599,
-        "voting_ensemble": 0.8590,
-        "logistic_regression": 0.8576,
-        "bagged_logistic": 0.8575,
-        "lightgbm": 0.8514,
-        "random_forest": 0.8471,
-        "xgboost": 0.8401,
-        "mlp": 0.7973,
-    }
-
-    for trial_idx in range(n_trials):
-        algo = algos[trial_idx % len(algos)]
-        balanced = bool(trial_idx % 2 == 0)
-        is_pruned = bool(trial_idx > 5 and rng.rand() < 0.25)
-
-        base_auc = base_map.get(algo, 0.845)
-        noise = rng.normal(0.0, 0.005)
-        penalty = -0.04 if is_pruned else 0.0
-        cv_auc = float(np.clip(base_auc + noise + penalty, 0.75, 0.865))
-        cv_std = float(rng.uniform(0.006, 0.012))
-        cv_pr = float(np.clip(cv_auc * 0.74 + rng.normal(0, 0.008), 0.58, 0.67))
-
-        lr = float(np.round(10 ** rng.uniform(-2.5, -0.6), 4)) if algo in ("lightgbm", "xgboost") else np.nan
-        n_est = int(rng.choice([50, 100, 150, 200, 250, 300])) if "ensemble" in algo or "forest" in algo or algo in ("lightgbm", "xgboost") else np.nan
-        max_d = int(rng.choice([3, 4, 5, 6, 8, 10])) if "ensemble" in algo or "forest" in algo or algo in ("lightgbm", "xgboost") else np.nan
-        num_leaves = int(rng.choice([15, 31, 63])) if algo == "lightgbm" else np.nan
-
-        records.append({
-            "run_id": f"run_{trial_idx:03d}_{rng.randint(100000, 999999)}",
-            "run_name": f"trial_{trial_idx}_{algo}",
-            "tags.algorithm": algo,
-            "tags.balanced": str(balanced),
-            "tags.trial_number": str(trial_idx),
-            "tags.status": "PRUNED" if is_pruned else "COMPLETED",
-            "metrics.cv_roc_auc": round(cv_auc, 4),
-            "metrics.cv_roc_auc_std": round(cv_std, 4),
-            "metrics.cv_pr_auc": round(cv_pr, 4),
-            "params.learning_rate": lr,
-            "params.n_estimators": n_est,
-            "params.max_depth": max_d,
-            "params.num_leaves": num_leaves,
-            "start_time": f"2026-10-31 14:{trial_idx % 60:02d}:10",
-        })
-
-    return pd.DataFrame(records)
-
-
 @st.cache_data(show_spinner=False)
 def load_mlflow_runs(
     tracking_uri: str = "sqlite:///mlflow.db",
     experiment_name: str = "churn_retraining_optimization",
 ) -> pd.DataFrame:
-    """Retrieve MLflow experiment runs or fall back to curated trial benchmark dataset."""
+    """Retrieve MLflow experiment runs or return an empty DataFrame if store is absent/empty."""
     try:
         import mlflow
         from pathlib import Path
@@ -211,7 +148,7 @@ def load_mlflow_runs(
     except Exception as exc:
         logger.warning("Failed loading MLflow runs from %s: %s", tracking_uri, exc)
 
-    return generate_mock_mlflow_runs()
+    return pd.DataFrame()
 
 
 
