@@ -129,7 +129,7 @@ def run_tuning_study(
     n_trials: int = 50,
     cv_folds: int = 5,
     experiment_name: str = "churn_retraining_optimization",
-    tracking_uri: str = "file:./mlruns",
+    tracking_uri: str = "sqlite:///mlflow.db",
     random_state: int = 42,
 ) -> TuningResult:
     """Run a unified Optuna Bayesian optimization study across candidate models with MLflow logging."""

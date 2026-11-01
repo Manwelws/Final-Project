@@ -271,45 +271,42 @@ def render_experiment_hub_page() -> None:
 
     with g_col1:
         st.markdown(
-            """
-            <div class="glass-card">
-                <div style="font-weight: 700; font-size: 1.0rem; color: #FFFFFF; margin-bottom: 0.4rem;">
-                    🚀 Launching Local MLflow Dashboard
-                </div>
-                <div style="font-size: 0.82rem; color: #D1D5DB; line-height: 1.6;">
-                    The pipeline tracks full artifacts, model binaries, and parameters in the standard tracking store:
-                    <br><br>
-                    <code style="color: #60A5FA; background: #1F2937; padding: 0.2rem 0.5rem; border-radius: 4px;">
-                        mlflow ui --port 5000 --backend-store-uri file:./mlruns
-                    </code>
-                    <br><br>
-                    Open <b>http://localhost:5000</b> to explore full run lineage, artifact downloads, and nested cross-validation runs.
-                </div>
-            </div>
-            """,
+            '<div class="glass-card">'
+            '<div style="font-weight: 700; font-size: 1.0rem; color: #FFFFFF; margin-bottom: 0.4rem;">'
+            '🚀 Launching Local MLflow Dashboard'
+            '</div>'
+            '<div style="font-size: 0.82rem; color: #D1D5DB; line-height: 1.6;">'
+            'The pipeline tracks full artifacts, model binaries, and parameters in the standard SQLite tracking store:'
+            '<br><br>'
+            '<code style="color: #60A5FA; background: #1F2937; padding: 0.2rem 0.5rem; border-radius: 4px;">'
+            'uv run mlflow ui --port 5000 --backend-store-uri sqlite:///mlflow.db'
+            '</code>'
+            '<br><br>'
+            'Open <b>http://localhost:5000</b> to explore full run lineage, artifact downloads, and nested cross-validation runs.'
+            '</div>'
+            '</div>',
             unsafe_allow_html=True,
         )
 
     with g_col2:
         st.markdown(
-            """
-            <div class="glass-card">
-                <div style="font-weight: 700; font-size: 1.0rem; color: #FFFFFF; margin-bottom: 0.4rem;">
-                    ⚙️ Reproducing the Bayesian Optimization Study
-                </div>
-                <div style="font-size: 0.82rem; color: #D1D5DB; line-height: 1.6;">
-                    To initiate a fresh Optuna TPE Bayesian optimization sweep across LightGBM, XGBoost, and Random Forest:
-                    <br><br>
-                    <code style="color: #34D399; background: #1F2937; padding: 0.2rem 0.5rem; border-radius: 4px;">
-                        churn train --tune --n-trials 50 --cv-folds 5
-                    </code>
-                    <br><br>
-                    The search employs <code>TPESampler(seed=42)</code> with <code>MedianPruner</code> to automatically terminate unpromising parameter configurations.
-                </div>
-            </div>
-            """,
+            '<div class="glass-card">'
+            '<div style="font-weight: 700; font-size: 1.0rem; color: #FFFFFF; margin-bottom: 0.4rem;">'
+            '⚙️ Reproducing the Bayesian Optimization Study'
+            '</div>'
+            '<div style="font-size: 0.82rem; color: #D1D5DB; line-height: 1.6;">'
+            'To initiate a fresh Optuna TPE Bayesian optimization sweep across LightGBM, XGBoost, and Random Forest:'
+            '<br><br>'
+            '<code style="color: #34D399; background: #1F2937; padding: 0.2rem 0.5rem; border-radius: 4px;">'
+            'uv run churn train --tune --n-trials 50 --cv-folds 5'
+            '</code>'
+            '<br><br>'
+            'The search employs <code>TPESampler(seed=42)</code> with <code>MedianPruner</code> to automatically terminate unpromising parameter configurations.'
+            '</div>'
+            '</div>',
             unsafe_allow_html=True,
         )
+
 
 
 if __name__ == "__main__":
