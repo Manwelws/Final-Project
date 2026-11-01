@@ -9,10 +9,14 @@ from final_project.registry import ModelBundle
 
 
 @pytest.fixture
-def client(synthetic_model_bundle_dir):
-    app.state.bundle = ModelBundle.load(model_dir=synthetic_model_bundle_dir)
+def client(synthetic_model_bundle_dir, monkeypatch):
+    monkeypatch.setenv("CHURN_MODELS_DIR", str(synthetic_model_bundle_dir))
+    bundle = ModelBundle.load(model_dir=synthetic_model_bundle_dir)
+    app.state.bundle = bundle
     with TestClient(app) as test_client:
+        app.state.bundle = bundle
         yield test_client
+    app.state.bundle = None
 
 
 def test_health_endpoint_contract(client):

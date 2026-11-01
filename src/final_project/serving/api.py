@@ -31,11 +31,13 @@ MODELS_DIR = Path(os.environ.get("CHURN_MODELS_DIR", "models"))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load model artifact and metadata into application state on startup."""
-    try:
-        app.state.bundle = ModelBundle.load(model_dir=MODELS_DIR)
-    except Exception as exc:
-        app.state.bundle = None
-        app.state.load_error = str(exc)
+    if getattr(app.state, "bundle", None) is None:
+        models_dir = Path(os.environ.get("CHURN_MODELS_DIR", "models"))
+        try:
+            app.state.bundle = ModelBundle.load(model_dir=models_dir)
+        except Exception as exc:
+            app.state.bundle = None
+            app.state.load_error = str(exc)
     yield
 
 
@@ -52,8 +54,9 @@ def get_model_bundle() -> ModelBundle:
     bundle = getattr(app.state, "bundle", None)
     if bundle is not None:
         return bundle
+    models_dir = Path(os.environ.get("CHURN_MODELS_DIR", "models"))
     try:
-        bundle = ModelBundle.load(model_dir=MODELS_DIR)
+        bundle = ModelBundle.load(model_dir=models_dir)
         app.state.bundle = bundle
         return bundle
     except Exception as exc:
