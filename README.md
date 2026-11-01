@@ -6,7 +6,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B.svg)](https://streamlit.io)
 [![MLflow](https://img.shields.io/badge/MLflow-Tracking-0194E2.svg)](https://mlflow.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com)
-[![Test Suite](https://img.shields.io/badge/tests-81%2F81%20passing-brightgreen.svg)](tests/)
+[![Test Suite](https://img.shields.io/badge/tests-94%2F94%20passing-brightgreen.svg)](tests/)
 
 An enterprise-grade, closed-loop machine learning engineering system designed to detect telecom customer churn, optimize financial intervention economics, explain predictions to frontline retention specialists in real time, and continuously retrain models under covariate and concept drift.
 
@@ -51,7 +51,7 @@ flowchart LR
     end
 
     subgraph TrainLayer["2. TRAINING & EVALUATION LAYER"]
-        FACTORY["Candidate Model Factory\n(RF, LightGBM, XGBoost)"]
+        FACTORY["Candidate Model Factory\n(RF, LightGBM, XGBoost, MLP)"]
         WEIGHTS["Imbalance Strategy\n(Native Class Weights / pos_wt)"]
         OPTUNA["Bayesian Optimization\n(Optuna TPE + MedianPruner)"]
         MLFLOW[("MLflow Tracking Hub\n./mlruns Store")]
@@ -544,6 +544,8 @@ All candidate tree ensembles were benchmarked across **5-Fold Stratified Cross-V
 | 5 | **XGBoost** | Native Unweighted | 0.8382 ± 0.0120 | 0.6401 ± 0.0298 | Evaluated |
 | 6 | **XGBoost** | Balanced (`scale_pos_weight`) | 0.8379 ± 0.0093 | 0.6431 ± 0.0249 | Evaluated |
 
+*In addition to tree ensembles, the candidate model factory (`src/final_project/models.py`) supports Multi-Layer Perceptrons (`mlp` / `MLPClassifier`), Logistic Regression with standard scaling, Bagged Logistic Regression, K-Nearest Neighbors, Soft Voting, and Stacking Classifiers.*
+
 ### 🔍 Interpretability & Frontline Explainability
 
 ChurnOps decomposes 27 one-hot preprocessed features back into intuitive parent business domains using SHAP `TreeExplainer`:
@@ -560,6 +562,7 @@ Simulates production streaming conditions over an 8-week horizon with realistic 
 - **Dual Triggering Architecture**:
   1. *Unsupervised PSI Monitor*: Detects feature distribution shifts (`Monthly Charges` PSI jumps from <0.04 to 4.35 at Week 5).
   2. *Supervised Decay Trigger*: Fires when rolling 2-week live AUC drops $\ge 0.05$ below the historical peak.
+- **Trigger Timeline & Baseline**: Retraining triggers at **Week 3** (initial warm-up), **Week 5**, and **Week 7** under performance decay. The **never-retrain baseline** holds flat at **~0.836 AUC** on static reference.
 - **Exponential Sample Decay**: Applies recency weight $w = 0.85^{\text{weeks\_old}}$ during retraining, preventing stale data from diluting recent drift patterns.
 
 ---
@@ -621,7 +624,7 @@ python notebooks/simulate_retraining.py
 ### 6. Run Automated Test Suite
 
 ```bash
-# Run all 81 automated tests
+# Run all 94 automated tests
 uv run pytest
 ```
 
@@ -661,10 +664,11 @@ uv run churn dashboard --port 8501 --host 0.0.0.0
 
 | Method | Endpoint | Description | Sample Payload |
 |---|---|---|---|
-| `GET` | `/health` | Service health status, model algorithm, and active cutoff | None |
+| `GET` | `/health` | Shallow liveness healthcheck | None |
+| `GET` | `/ready` | Deep readiness check: verifies loaded model bundle and cutoff | None |
 | `POST` | `/predict` | Single customer prediction with risk tier | `{"Contract": "Month-to-month", "Monthly Charges": 85.0, ...}` |
-| `POST` | `/predict/batch` | High-throughput batch scoring | `[{"Contract": "One year", ...}, ...]` |
-| `POST` | `/explain` | Signed parent SHAP decomposition | `{"profile": {"Contract": "Month-to-month", ...}}` |
+| `POST` | `/predict/batch` | High-throughput batch scoring (supports list `[...]` or `{"items": [...]}`) | `[{"Contract": "One year", ...}]` or `{"items": [{"Contract": "One year", ...}]}` |
+| `POST` | `/explain` | Signed parent SHAP attribution decomposition | `{"profile": {"Contract": "Month-to-month", ...}}` |
 
 ---
 
@@ -711,7 +715,7 @@ uv run churn dashboard --port 8501 --host 0.0.0.0
 │       ├── styles.py             # Dark modern design system tokens
 │       ├── state.py              # Cached loaders & KPI calculations
 │       └── pages/                # 5 dedicated dashboard views
-├── tests/                        # 81 automated pytest test cases across 22 modules
+├── tests/                        # 94 automated pytest test cases across 23 modules
 ├── docker-compose.yml
 ├── Dockerfile
 ├── pyproject.toml

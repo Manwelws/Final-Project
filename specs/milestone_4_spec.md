@@ -116,8 +116,18 @@ src/final_project/dashboard/
    - All 5 pages render cleanly with cohesive dark theme styling and instant caching.
 3. **Accuracy & Consistency**:
    - Financial figures match `reports/evaluation_report.md` ($21,860 savings, 0.12 cutoff).
-   - Drift timeline matches `data/drift/drift_metrics.csv` (weeks 3 and 7 triggers).
+   - Drift timeline matches `data/drift/drift_metrics.csv` (weeks 3, 5, and 7 triggers).
    - Scoring matches `POST /predict` and `POST /explain` outputs.
 4. **Automated Test Coverage**:
    - Dedicated test suite in `tests/test_dashboard.py` verifying state helpers, KPI calculations, and page render functions.
-   - All existing 52 project tests continue to pass.
+   - All 94 automated tests pass hermetically.
+
+---
+
+## As-Built Deltas
+
+- **Truthful Empty States**: In accordance with Stage 5 hardening (#56), all dashboard pages render clear, actionable `st.info` notices when tracking databases or model artifacts are absent, eliminating fabricated mock runs.
+- **Dynamic KPI Computation**: Removed hardcoded champion model strings and cutoff values; all KPIs are dynamically loaded from `models/metadata.json` and cleaned data frames.
+- **Benchmark Trace in Drift Monitor**: Plotted a distinct dashed benchmark line for the historical best-ever live AUC alongside the weekly live AUC trajectory.
+- **Retraining Trigger Timeline**: Simulation triggers at weeks 3, 5, and 7 on performance decay; never-retrain baseline holds at ~0.836 AUC on static reference.
+
