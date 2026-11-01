@@ -36,13 +36,33 @@ def generate_parameter_scatter(
         style_plotly_figure(fig)
         return fig
 
-    clean_df["Algorithm"] = clean_df.get("tags.algorithm", "Unknown").str.upper()
-    clean_df["Status"] = clean_df.get("tags.status", "COMPLETED")
+    if "tags.algorithm" in clean_df.columns:
+        clean_df["Algorithm"] = clean_df["tags.algorithm"].fillna("UNKNOWN").astype(str).str.upper()
+    elif "model_family" in clean_df.columns:
+        clean_df["Algorithm"] = clean_df["model_family"].astype(str).str.upper()
+    else:
+        clean_df["Algorithm"] = "UNKNOWN"
+
+    if "tags.status" in clean_df.columns:
+        clean_df["Status"] = clean_df["tags.status"].fillna("COMPLETED").astype(str)
+    else:
+        clean_df["Status"] = "COMPLETED"
+
+    if "run_name" not in clean_df.columns:
+        clean_df["run_name"] = [f"trial_{i}" for i in range(len(clean_df))]
+
+    hover_dict: dict[str, Any] = {
+        param_col: ":.4f" if "learning_rate" in param_col else True,
+        metric_col: ":.4f",
+    }
+    if "tags.balanced" in clean_df.columns:
+        hover_dict["tags.balanced"] = True
 
     color_map = {
         "LIGHTGBM": "#3B82F6",
         "XGBOOST": "#8B5CF6",
         "RANDOM_FOREST": "#10B981",
+        "RANDOMFOREST": "#10B981",
         "UNKNOWN": "#9CA3AF",
     }
 
@@ -54,11 +74,7 @@ def generate_parameter_scatter(
         color_discrete_map=color_map,
         symbol="Status",
         hover_name="run_name",
-        hover_data={
-            param_col: ":.4f" if "learning_rate" in param_col else True,
-            metric_col: ":.4f",
-            "tags.balanced": True,
-        },
+        hover_data=hover_dict,
         title=f"Hyperparameter Sensitivity: {param_col.replace('params.', '')} vs CV ROC-AUC",
     )
 
@@ -75,24 +91,32 @@ def generate_parameter_scatter(
 
 def generate_algorithm_comparison_box(df: pd.DataFrame) -> go.Figure:
     """Generate box plots comparing candidate model trial performance distributions."""
-    if df.empty or "metrics.cv_roc_auc" not in df.columns:
+    metric_col = "metrics.cv_roc_auc" if "metrics.cv_roc_auc" in df.columns else ("ROC-AUC" if "ROC-AUC" in df.columns else None)
+    if df.empty or metric_col is None:
         fig = go.Figure()
         fig.update_layout(title="No trials available")
         style_plotly_figure(fig)
         return fig
 
-    clean_df = df.dropna(subset=["metrics.cv_roc_auc"]).copy()
-    clean_df["Algorithm"] = clean_df.get("tags.algorithm", "Unknown").str.upper()
+    clean_df = df.dropna(subset=[metric_col]).copy()
+    if "tags.algorithm" in clean_df.columns:
+        clean_df["Algorithm"] = clean_df["tags.algorithm"].fillna("UNKNOWN").astype(str).str.upper()
+    elif "Model Family" in clean_df.columns:
+        clean_df["Algorithm"] = clean_df["Model Family"].astype(str).str.upper()
+    else:
+        clean_df["Algorithm"] = "UNKNOWN"
 
     fig = px.box(
         clean_df,
         x="Algorithm",
-        y="metrics.cv_roc_auc",
+        y=metric_col,
         color="Algorithm",
         color_discrete_map={
             "LIGHTGBM": "#3B82F6",
             "XGBOOST": "#8B5CF6",
             "RANDOM_FOREST": "#10B981",
+            "RANDOMFOREST": "#10B981",
+            "UNKNOWN": "#9CA3AF",
         },
         points="all",
         title="Candidate Algorithm Performance Distribution across Trials",
