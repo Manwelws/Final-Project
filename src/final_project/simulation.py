@@ -216,7 +216,7 @@ class SimulationRunner:
         models_dir: Path | str = "models",
         live_dir: Path | str = "data/live",
         reference_dir: Path | str = "data/reference",
-        retraining_dir: Path | str = "data/retraining",
+        retraining_dir: Path | str = "models/retrained",
         drift_dir: Path | str = "data/drift",
         save_artifacts: bool = True,
         monitor: DualDriftMonitor | None = None,

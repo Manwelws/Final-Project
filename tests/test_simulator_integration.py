@@ -39,7 +39,7 @@ def test_drift_metrics_csv_structure_and_values():
 
 
 def test_retraining_artifacts_saved():
-    retrain_dir = Path("data/retraining")
+    retrain_dir = Path("models/retrained")
     assert retrain_dir.exists()
 
     # Check week 7 retraining artifacts

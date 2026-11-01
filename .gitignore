@@ -12,10 +12,9 @@ wheels/
 # Testing & Caches
 .pytest_cache/
 
-# Model artifacts and outputs
-models/
-
 # MLflow Experiment Tracking
 mlruns/
 *.db
+
+# Model artifacts (binary weights ignored, metadata & metrics tracked)
 *.joblib

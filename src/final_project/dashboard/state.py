@@ -55,9 +55,13 @@ def load_drift_metrics(drift_path: str = "data/drift/drift_metrics.csv") -> pd.D
 
 
 @st.cache_data(show_spinner=False)
-def load_retraining_logs(retrain_dir: str = "data/retraining") -> dict[int, dict[str, Any]]:
+def load_retraining_logs(retrain_dir: str = "models/retrained") -> dict[int, dict[str, Any]]:
     """Load retraining metadata across simulated weeks."""
     base = Path(retrain_dir)
+    if not base.exists() and retrain_dir == "models/retrained":
+        fallback = Path("data/retraining")
+        if fallback.exists():
+            base = fallback
     logs: dict[int, dict[str, Any]] = {}
     if not base.exists():
         return logs
