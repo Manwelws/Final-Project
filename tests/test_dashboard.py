@@ -264,24 +264,37 @@ def test_retention_triage_components(synthetic_model_bundle_dir) -> None:
 
 def test_experiment_hub_components() -> None:
     """Verify MLflow runs loading, parameter scatter generator, and candidate box plots."""
-    from final_project.dashboard.state import load_mlflow_runs, generate_mock_mlflow_runs
+    from final_project.dashboard.state import load_mlflow_runs
     from final_project.dashboard.pages.experiment_hub import (
         generate_parameter_scatter,
         generate_algorithm_comparison_box,
     )
 
-    # 1. Runs loader & mock fallback
-    mock_df = generate_mock_mlflow_runs(n_trials=30)
-    assert len(mock_df) == 30
-    assert "metrics.cv_roc_auc" in mock_df.columns
-    assert "tags.algorithm" in mock_df.columns
+    # 1. Runs loader returns empty dataframe when no runs or database exist (R5-1 Truthfulness)
+    runs_df = load_mlflow_runs(tracking_uri="sqlite:///nonexistent_mlflow.db")
+    assert isinstance(runs_df, pd.DataFrame)
+    assert runs_df.empty
 
-    runs_df = load_mlflow_runs()
-    assert not runs_df.empty
-    assert "metrics.cv_roc_auc" in runs_df.columns
-
-    # 2. Parameter Scatter Plot
-    fig_scatter = generate_parameter_scatter(runs_df, param_col="params.n_estimators")
+    # 2. Parameter Scatter Plot with synthetic trial data
+    synthetic_trials = pd.DataFrame([
+        {
+            "run_id": "trial_001",
+            "run_name": "trial_1_rf",
+            "tags.algorithm": "random_forest",
+            "tags.status": "COMPLETED",
+            "metrics.cv_roc_auc": 0.845,
+            "params.n_estimators": 100,
+        },
+        {
+            "run_id": "trial_002",
+            "run_name": "trial_2_xgb",
+            "tags.algorithm": "xgboost",
+            "tags.status": "COMPLETED",
+            "metrics.cv_roc_auc": 0.852,
+            "params.n_estimators": 200,
+        },
+    ])
+    fig_scatter = generate_parameter_scatter(synthetic_trials, param_col="params.n_estimators")
     assert len(fig_scatter.data) >= 1
     assert "Hyperparameter Sensitivity" in fig_scatter.layout.title.text
 
@@ -290,7 +303,7 @@ def test_experiment_hub_components() -> None:
     assert "No trials available" in fig_empty.layout.title.text
 
     # 4. Candidate Architecture Box Plot
-    fig_box = generate_algorithm_comparison_box(runs_df)
+    fig_box = generate_algorithm_comparison_box(synthetic_trials)
     assert len(fig_box.data) >= 1
     assert "Distribution" in fig_box.layout.title.text
 

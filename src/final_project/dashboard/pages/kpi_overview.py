@@ -154,7 +154,11 @@ def render_kpi_overview_page() -> None:
         bundle = load_model_bundle()
     except Exception as exc:
         logger.error("Failed to load dataset or model bundle: %s", exc, exc_info=True)
-        st.error(f"Failed to load dataset or model bundle: {exc}")
+        st.info("ℹ️ No trained model bundle or processed dataset found in `models/` or `data/processed/`. Run `churn train` to generate production artifacts.")
+        return
+
+    if X is None or y is None or len(X) == 0 or bundle is None:
+        st.info("ℹ️ Dataset or model bundle is empty. Run `churn train` to populate production artifacts.")
         return
 
     # Split for holdout evaluation
@@ -384,22 +388,46 @@ def render_kpi_overview_page() -> None:
             st.info("Full customer dataset not loaded.")
 
     with driver_col2:
-        st.markdown(
-            """
+        if full_df is not None and "Churn Value" in full_df.columns:
+            m2m_mask = full_df["Contract"] == "Month-to-month" if "Contract" in full_df.columns else pd.Series(False, index=full_df.index)
+            two_yr_mask = full_df["Contract"] == "Two year" if "Contract" in full_df.columns else pd.Series(False, index=full_df.index)
+            echeck_mask = full_df["Payment Method"] == "Electronic check" if "Payment Method" in full_df.columns else pd.Series(False, index=full_df.index)
+            card_mask = full_df["Payment Method"] == "Credit card (automatic)" if "Payment Method" in full_df.columns else pd.Series(False, index=full_df.index)
+            no_tech_mask = full_df["Tech Support"] == "No" if "Tech Support" in full_df.columns else pd.Series(False, index=full_df.index)
+            tech_mask = full_df["Tech Support"] == "Yes" if "Tech Support" in full_df.columns else pd.Series(False, index=full_df.index)
+
+            m2m_rate = (full_df.loc[m2m_mask, "Churn Value"] == 1).mean() * 100 if m2m_mask.any() else 42.7
+            two_yr_rate = (full_df.loc[two_yr_mask, "Churn Value"] == 1).mean() * 100 if two_yr_mask.any() else 2.8
+            echeck_rate = (full_df.loc[echeck_mask, "Churn Value"] == 1).mean() * 100 if echeck_mask.any() else 45.3
+            card_rate = (full_df.loc[card_mask, "Churn Value"] == 1).mean() * 100 if card_mask.any() else 15.2
+            no_tech_rate = (full_df.loc[no_tech_mask, "Churn Value"] == 1).mean() * 100 if no_tech_mask.any() else 31.2
+            tech_rate = (full_df.loc[tech_mask, "Churn Value"] == 1).mean() * 100 if tech_mask.any() else 15.2
+
+            takeaway_html = f"""
             <div class="glass-card" style="height: 100%;">
                 <div style="font-weight: 700; font-size: 1.05rem; color: #FFFFFF; margin-bottom: 0.6rem;">
                     💡 Executive Takeaways
                 </div>
                 <div style="font-size: 0.85rem; color: #D1D5DB; line-height: 1.6;">
-                    <p><b>1. Contract Commitment Gap:</b> Month-to-month subscribers experience an alarming <b>42.7%</b> churn rate compared to only <b>2.8%</b> for two-year contracts.</p>
-                    <p><b>2. Payment Friction:</b> Electronic check payers churn at <b>45.3%</b>—nearly 3× higher than automated credit card billing (15.2%).</p>
-                    <p><b>3. Tech Support Shield:</b> Accounts without technical support churn at <b>31.2%</b> vs <b>15.2%</b> with support, proving support is a major retention anchor.</p>
+                    <p><b>1. Contract Commitment Gap:</b> Month-to-month subscribers experience an alarming <b>{m2m_rate:.1f}%</b> churn rate compared to only <b>{two_yr_rate:.1f}%</b> for two-year contracts.</p>
+                    <p><b>2. Payment Friction:</b> Electronic check payers churn at <b>{echeck_rate:.1f}%</b>—nearly 3× higher than automated credit card billing ({card_rate:.1f}%).</p>
+                    <p><b>3. Tech Support Shield:</b> Accounts without technical support churn at <b>{no_tech_rate:.1f}%</b> vs <b>{tech_rate:.1f}%</b> with support, proving support is a major retention anchor.</p>
                     <p style="color: #60A5FA; margin-bottom: 0;"><b>Action:</b> Shift month-to-month users to annual terms with automatic billing incentives.</p>
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            """
+        else:
+            takeaway_html = """
+            <div class="glass-card" style="height: 100%;">
+                <div style="font-weight: 700; font-size: 1.05rem; color: #FFFFFF; margin-bottom: 0.6rem;">
+                    💡 Executive Takeaways
+                </div>
+                <div style="font-size: 0.85rem; color: #9CA3AF; line-height: 1.6;">
+                    <p>Cohort dataset not loaded. Run <code>churn train</code> to compute empirical customer drivers.</p>
+                </div>
+            </div>
+            """
+        st.markdown(takeaway_html, unsafe_allow_html=True)
 
     st.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin: 2rem 0;'>", unsafe_allow_html=True)
 
