@@ -109,7 +109,7 @@ def _build_model_from_trial(
         model = get_candidate_model(
             "xgboost",
             balanced=balanced,
-            scale_pos_weight=scale_pos_weight,
+            scale_pos_weight=scale_pos_weight if balanced else None,
             random_state=random_state,
             n_estimators=n_estimators,
             learning_rate=learning_rate,
@@ -170,7 +170,7 @@ def _build_model_from_trial(
         model = get_candidate_model(
             algorithm,
             balanced=balanced,
-            scale_pos_weight=scale_pos_weight,
+            scale_pos_weight=scale_pos_weight if balanced else None,
             random_state=random_state,
         )
 

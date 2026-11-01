@@ -77,3 +77,34 @@ def test_simulation_runner_dependency_injection():
     assert runner.save_artifacts is False
     assert runner.verbose is False
 
+
+def test_safe_roc_auc_score():
+    from final_project.simulation import _safe_roc_auc_score
+
+    # Normal 2-class case
+    y_true = np.array([0, 1, 0, 1])
+    preds = np.array([0.1, 0.9, 0.2, 0.8])
+    assert _safe_roc_auc_score(y_true, preds) == 1.0
+
+    # Single-class case -> None without throwing
+    y_single = np.array([0, 0, 0, 0])
+    assert _safe_roc_auc_score(y_single, preds) is None
+
+
+def test_fit_never_retrain_baseline_pre_drift_only():
+    from sklearn.linear_model import LogisticRegression
+
+    cfg = SimulationConfig(drift_start_week=5)
+    runner = SimulationRunner(config=cfg, save_artifacts=False, verbose=False)
+
+    master = pd.DataFrame({
+        "feat1": [1.0, 2.0, 3.0, 4.0, 5.0],
+        "Churn Value": [0, 1, 0, 1, 0],
+        "label_release_week": [3, 4, 5, 6, 7],
+    })
+
+    base_model = LogisticRegression()
+    fitted_model = runner._fit_never_retrain_baseline(base_model, master, ["feat1"])
+    # Should only fit on label_release_week < 5 (i.e. weeks 3 and 4 -> 2 samples)
+    assert fitted_model is not None
+

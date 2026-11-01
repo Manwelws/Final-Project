@@ -6,7 +6,7 @@
   "psi_max": 0.0231,
   "psi_status": "Stable",
   "sample_decay_rate": 0.85,
-  "auc_on_recent_live": 1.0,
+  "auc_on_recent_live": 0.9702,
   "auc_on_static_reference": 0.8302,
-  "never_retrain_auc_reference": 0.8355
+  "never_retrain_auc_reference": 0.8363
 }

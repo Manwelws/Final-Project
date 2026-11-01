@@ -12,6 +12,8 @@ from sklearn.metrics import (
 )
 from sklearn.calibration import calibration_curve
 
+from final_project.domain.cost import CostMatrix
+
 
 def render_evaluation_plots(
     y_true: np.ndarray | Any = None,
@@ -113,7 +115,8 @@ def render_evaluation_plots(
     ax.axvline(0.50, color="gray", linestyle=":", label=f"Default 0.50 (${opt_result.cost_at_default:,.0f})")
     ax.set_xlabel("Classification Decision Threshold")
     ax.set_ylabel("Total Financial Loss ($)")
-    ax.set_title("Business Cost-Utility Optimization Curve ($C_{FN}=$200, $C_{FP}=$20)")
+    cost_matrix = getattr(report, "cost_matrix", None) or getattr(opt_result, "cost_matrix", None) or CostMatrix(cost_fn=200.0, cost_fp=20.0)
+    ax.set_title(f"Business Cost-Utility Optimization Curve ($C_{{FN}}=${cost_matrix.cost_fn:,.0f}, $C_{{FP}}=${cost_matrix.cost_fp:,.0f})")
     ax.legend()
     ax.grid(alpha=0.3)
     cost_path = out_dir / "cost_curve.png"
@@ -188,6 +191,8 @@ def generate_evaluation_report(
         else 0.0
     )
 
+    cost_matrix = getattr(report, "cost_matrix", None) or getattr(opt_result, "cost_matrix", None) or CostMatrix(cost_fn=200.0, cost_fp=20.0)
+
     content = f"""# Production Churn Model: Holdout Evaluation Report
 
 ## 1. Executive Summary
@@ -202,7 +207,7 @@ def generate_evaluation_report(
 ## 2. Decision Threshold Comparison & Cost-Utility Threshold Optimization
 
 Business Loss Formula: $\\text{{Loss}} = C_{{\\text{{FN}}}} \\times \\text{{FN}} + C_{{\\text{{FP}}}} \\times \\text{{FP}}$  
-Assumed Matrix: $C_{{\\text{{FN}}}} = \\$200$ (missed churner customer lifetime loss) vs. $C_{{\\text{{FP}}}} = \\$20$ (cost of customer retention outreach).
+Assumed Matrix: $C_{{\\text{{FN}}}} = \\${cost_matrix.cost_fn:,.0f}$ (missed churner customer lifetime loss) vs. $C_{{\\text{{FP}}}} = \\${cost_matrix.cost_fp:,.0f}$ (cost of customer retention outreach).
 
 | Decision Strategy | Threshold | Precision | Recall | F1 Score | F2 Score | False Negatives | False Positives | Expected Loss ($) |
 |---|---|---|---|---|---|---|---|---|
@@ -213,8 +218,8 @@ Assumed Matrix: $C_{{\\text{{FN}}}} = \\$200$ (missed churner customer lifetime 
 ---
 
 ## 3. Key Observations & Operational Recommendations
-1. **Financial Leverage**: Shifting the decision cutoff from `0.50` down to **`{cost_m.threshold:.2f}`** captures **{def_m.fn - cost_m.fn} additional at-risk churners**, reducing missed churn loss from ${def_m.fn * 200:,.0f} to ${cost_m.fn * 200:,.0f}.
-2. **Acceptable Outreach Volume**: While false alarms increase by {cost_m.fp - def_m.fp:,} customers, each outreach costs only $20, yielding a net business savings of **${opt_result.cost_savings:,.2f}**.
+1. **Financial Leverage**: Shifting the decision cutoff from `0.50` down to **`{cost_m.threshold:.2f}`** captures **{def_m.fn - cost_m.fn} additional at-risk churners**, reducing missed churn loss from ${def_m.fn * cost_matrix.cost_fn:,.0f} to ${cost_m.fn * cost_matrix.cost_fn:,.0f}.
+2. **Acceptable Outreach Volume**: While false alarms increase by {cost_m.fp - def_m.fp:,} customers, each outreach costs only ${cost_matrix.cost_fp:,.0f}, yielding a net business savings of **${opt_result.cost_savings:,.2f}**.
 3. **Serving Recommendation**: Production scoring should apply the decision threshold `threshold={cost_m.threshold:.2f}` when routing customers to the retention team.
 
 ---

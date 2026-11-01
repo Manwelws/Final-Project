@@ -95,6 +95,7 @@ def synthetic_simulation_artifacts(tmp_path: Path):
             "psi_status": "Significant Shift (Drift Detected)" if is_drift else "Stable",
             "never_retrain_auc_reference": 0.835,
             "retrain_model_auc_recent": 0.95 if is_drift else 0.88,
+            "best_retrain_auc": 0.95 if is_drift else 0.88,
             "retrained": retrained,
             "trigger_reason": "performance decay" if retrained else "monitoring",
         })

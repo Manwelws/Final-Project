@@ -76,11 +76,7 @@ def get_candidate_model(
         )
 
     elif normalized_name in ("xgboost", "xgb"):
-        weight = 1.0
-        if balanced:
-            weight = scale_pos_weight if scale_pos_weight is not None else 1.0
-        elif scale_pos_weight is not None:
-            weight = scale_pos_weight
+        weight = scale_pos_weight if (balanced and scale_pos_weight is not None) else 1.0
         return XGBClassifier(
             random_state=random_state,
             scale_pos_weight=weight,

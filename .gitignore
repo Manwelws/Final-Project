@@ -16,5 +16,7 @@ wheels/
 mlruns/
 *.db
 
-# Model artifacts (binary weights ignored, metadata & metrics tracked)
+# Model artifacts (production model artifact is committed per ADR/D4)
 *.joblib
+!models/model.joblib
+

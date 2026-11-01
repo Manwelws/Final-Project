@@ -6,7 +6,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B.svg)](https://streamlit.io)
 [![MLflow](https://img.shields.io/badge/MLflow-Tracking-0194E2.svg)](https://mlflow.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com)
-[![Test Suite](https://img.shields.io/badge/tests-75%2F75%20passing-brightgreen.svg)](tests/)
+[![Test Suite](https://img.shields.io/badge/tests-81%2F81%20passing-brightgreen.svg)](tests/)
 
 An enterprise-grade, closed-loop machine learning engineering system designed to detect telecom customer churn, optimize financial intervention economics, explain predictions to frontline retention specialists in real time, and continuously retrain models under covariate and concept drift.
 
@@ -537,12 +537,12 @@ All candidate tree ensembles were benchmarked across **5-Fold Stratified Cross-V
 
 | Rank | Model Architecture | Weighting Strategy | CV ROC-AUC (mean ± std) | CV PR-AUC (mean ± std) | Selection Status |
 |:---:|---|---|:---:|:---:|:---:|
-| 🥇 | **LightGBM** | Native Unweighted | **0.8528 ± 0.0104** | **0.6385 ± 0.0210** | **Best Candidate** |
-| 🥈 | **XGBoost** | Native Unweighted | **0.8492 ± 0.0118** | **0.6310 ± 0.0225** | Candidate |
-| 🥉 | **Random Forest** | Native Unweighted | **0.8474 ± 0.0107** | **0.6276 ± 0.0205** | Production Default |
-| 4 | LightGBM | Balanced (`scale_pos_weight`) | 0.8415 ± 0.0121 | 0.6220 ± 0.0214 | Evaluated |
-| 5 | XGBoost | Balanced (`scale_pos_weight`) | 0.8380 ± 0.0130 | 0.6190 ± 0.0230 | Evaluated |
-| 6 | Random Forest | Balanced (`class_weight`) | 0.8350 ± 0.0115 | 0.6150 ± 0.0210 | Evaluated |
+| 🥇 | **LightGBM** | Balanced (`scale_pos_weight`) | **0.8528 ± 0.0104** | **0.6668 ± 0.0283** | **Best Tree Candidate** |
+| 🥈 | **LightGBM** | Native Unweighted | **0.8517 ± 0.0083** | **0.6680 ± 0.0280** | Candidate |
+| 🥉 | **Random Forest** | Balanced (`class_weight`) | **0.8482 ± 0.0114** | **0.6450 ± 0.0328** | Candidate |
+| 4 | **Random Forest** | Native Unweighted | 0.8474 ± 0.0107 | 0.6443 ± 0.0310 | Production Default |
+| 5 | **XGBoost** | Native Unweighted | 0.8382 ± 0.0120 | 0.6401 ± 0.0298 | Evaluated |
+| 6 | **XGBoost** | Balanced (`scale_pos_weight`) | 0.8379 ± 0.0093 | 0.6431 ± 0.0249 | Evaluated |
 
 ### 🔍 Interpretability & Frontline Explainability
 
@@ -621,7 +621,7 @@ python notebooks/simulate_retraining.py
 ### 6. Run Automated Test Suite
 
 ```bash
-# Run all 75 automated tests
+# Run all 81 automated tests
 uv run pytest
 ```
 
@@ -711,7 +711,7 @@ uv run churn dashboard --port 8501 --host 0.0.0.0
 │       ├── styles.py             # Dark modern design system tokens
 │       ├── state.py              # Cached loaders & KPI calculations
 │       └── pages/                # 5 dedicated dashboard views
-├── tests/                        # 75 automated pytest test cases across 22 modules
+├── tests/                        # 81 automated pytest test cases across 22 modules
 ├── docker-compose.yml
 ├── Dockerfile
 ├── pyproject.toml

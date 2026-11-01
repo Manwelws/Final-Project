@@ -10,6 +10,8 @@ class DataSplit:
     X_test: pd.DataFrame
     y_train: pd.Series
     y_test: pd.Series
+    X_val: pd.DataFrame | None = None
+    y_val: pd.Series | None = None
 
 
 def load_features_and_target(
@@ -30,9 +32,10 @@ def load_and_split_data(
     features_path: Path | str,
     target_path: Path | str,
     test_size: float = 0.20,
+    val_size: float = 0.0,
     random_state: int = 42,
 ) -> DataSplit:
-    """Load features and target CSVs, performing a stratified train/test split."""
+    """Load features and target CSVs, performing a stratified train/test or train/val/test split."""
     X = pd.read_csv(features_path)
     y_df = pd.read_csv(target_path)
     
@@ -42,11 +45,47 @@ def load_and_split_data(
     else:
         y = y_df.iloc[:, 0]
 
+    # Single-class guard: skip stratification when target has fewer than 2 distinct classes
+    stratify = y if y.nunique() >= 2 else None
+
+    if val_size > 0.0:
+        if test_size + val_size >= 1.0:
+            raise ValueError(f"test_size ({test_size}) + val_size ({val_size}) must be < 1.0")
+        
+        # Step 1: Hold out test partition
+        X_rem, X_test, y_rem, y_test = train_test_split(
+            X,
+            y,
+            test_size=test_size,
+            stratify=stratify,
+            random_state=random_state,
+        )
+
+        # Step 2: Split remaining data into train and validation
+        rem_stratify = y_rem if y_rem.nunique() >= 2 else None
+        relative_val_size = val_size / (1.0 - test_size)
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_rem,
+            y_rem,
+            test_size=relative_val_size,
+            stratify=rem_stratify,
+            random_state=random_state,
+        )
+
+        return DataSplit(
+            X_train=X_train,
+            X_test=X_test,
+            y_train=y_train,
+            y_test=y_test,
+            X_val=X_val,
+            y_val=y_val,
+        )
+
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
         test_size=test_size,
-        stratify=y,
+        stratify=stratify,
         random_state=random_state,
     )
 

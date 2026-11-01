@@ -56,9 +56,9 @@ class OptimizationResult:
 
 @dataclass(frozen=True)
 class EvaluationSummary:
-    roc_auc: float
-    pr_auc: float
-    brier_score: float
+    roc_auc: float | None
+    pr_auc: float | None
+    brier_score: float | None
     optimal_threshold: float
     cost_savings: float
     default_metrics: ThresholdMetrics
@@ -73,9 +73,9 @@ class EvaluationReport:
 
     y_true: np.ndarray
     y_probs: np.ndarray
-    roc_auc: float
-    pr_auc: float
-    brier_score: float
+    roc_auc: float | None
+    pr_auc: float | None
+    brier_score: float | None
     optimization: OptimizationResult
     cost_matrix: CostMatrix
 
@@ -88,6 +88,8 @@ class EvaluationReport:
         cost_fn: float = 200.0,
         cost_fp: float = 20.0,
         step: float = 0.01,
+        optimal_threshold: float | None = None,
+        f1_optimal_threshold: float | None = None,
     ) -> "EvaluationReport":
         """Pure in-process computation: derives all metrics and optimization without filesystem I/O."""
         if cost_matrix is None:
@@ -96,15 +98,22 @@ class EvaluationReport:
         y_true_arr = np.asarray(y_true).ravel()
         y_probs_arr = np.asarray(y_probs).ravel()
 
-        roc_auc = float(roc_auc_score(y_true_arr, y_probs_arr))
-        pr_auc = float(average_precision_score(y_true_arr, y_probs_arr))
-        brier_score = float(brier_score_loss(y_true_arr, y_probs_arr))
+        if len(np.unique(y_true_arr)) < 2:
+            roc_auc = None
+            pr_auc = None
+            brier_score = None
+        else:
+            roc_auc = float(roc_auc_score(y_true_arr, y_probs_arr))
+            pr_auc = float(average_precision_score(y_true_arr, y_probs_arr))
+            brier_score = float(brier_score_loss(y_true_arr, y_probs_arr))
 
         optimization = optimize_threshold(
             y_true=y_true_arr,
             y_probs=y_probs_arr,
             cost_matrix=cost_matrix,
             step=step,
+            optimal_threshold=optimal_threshold,
+            f1_threshold=f1_optimal_threshold,
         )
 
         return cls(
@@ -216,6 +225,8 @@ def optimize_threshold(
     cost_fp: float = 20.0,
     step: float = 0.01,
     cost_matrix: CostMatrix | None = None,
+    optimal_threshold: float | None = None,
+    f1_threshold: float | None = None,
 ) -> OptimizationResult:
     """Sweep decision thresholds to determine the business cost-optimal and F1-optimal cutoffs."""
     if cost_matrix is None:
@@ -232,10 +243,16 @@ def optimize_threshold(
     )
 
     # Best F1
-    f1_optimal = max(all_metrics, key=lambda m: (m.f1, m.recall))
+    if f1_threshold is not None:
+        f1_optimal = compute_metrics_at_threshold(y_true, y_probs, f1_threshold, cost_matrix=cost_matrix)
+    else:
+        f1_optimal = max(all_metrics, key=lambda m: (m.f1, m.recall))
 
     # Best Cost (minimum expected loss)
-    cost_optimal = min(all_metrics, key=lambda m: (m.cost, -m.recall))
+    if optimal_threshold is not None:
+        cost_optimal = compute_metrics_at_threshold(y_true, y_probs, optimal_threshold, cost_matrix=cost_matrix)
+    else:
+        cost_optimal = min(all_metrics, key=lambda m: (m.cost, -m.recall))
 
     cost_at_default = default_metrics.cost
     cost_at_optimal = cost_optimal.cost
@@ -262,10 +279,11 @@ def run_evaluation(
     cost_fn: float = 200.0,
     cost_fp: float = 20.0,
     test_size: float = 0.20,
+    val_size: float = 0.10,
     random_state: int = 42,
     cost_matrix: CostMatrix | None = None,
 ) -> EvaluationSummary:
-    """Evaluate trained model on holdout test set, optimizing decision threshold and generating report."""
+    """Evaluate trained model on holdout test set, optimizing decision threshold on validation and generating report."""
     if cost_matrix is None:
         cost_matrix = CostMatrix(cost_fn=cost_fn, cost_fp=cost_fp)
 
@@ -273,11 +291,12 @@ def run_evaluation(
     features_path = data_path / "X_features.csv"
     target_path = data_path / "y_target.csv"
 
-    # Step 1: Load holdout split
+    # Step 1: Load holdout split with validation partition for threshold selection
     split = load_and_split_data(
         features_path=features_path,
         target_path=target_path,
         test_size=test_size,
+        val_size=val_size,
         random_state=random_state,
     )
 
@@ -287,15 +306,30 @@ def run_evaluation(
         raise FileNotFoundError(f"Model artifact not found at {m_path}")
     model = joblib.load(m_path)
 
-    # Step 3: Generate holdout probability predictions
+    # Step 3: Select decision threshold on validation set (D8 / R1-3 leak-free)
+    if split.X_val is not None and split.y_val is not None:
+        y_val_probs = model.predict_proba(split.X_val)[:, 1]
+        val_opt = optimize_threshold(
+            y_true=split.y_val.to_numpy(),
+            y_probs=y_val_probs,
+            cost_matrix=cost_matrix,
+        )
+        optimal_threshold = val_opt.cost_optimal_threshold
+        f1_threshold = val_opt.f1_optimal_threshold
+    else:
+        optimal_threshold = None
+        f1_threshold = None
+
+    # Step 4: Evaluate holdout test set ONCE with validation-calibrated threshold
     y_test_arr = split.y_test.to_numpy()
     y_probs = model.predict_proba(split.X_test)[:, 1]
 
-    # Step 4: Compute evaluation report (pure in-process domain entity)
     report = EvaluationReport.compute(
         y_true=y_test_arr,
         y_probs=y_probs,
         cost_matrix=cost_matrix,
+        optimal_threshold=optimal_threshold,
+        f1_optimal_threshold=f1_threshold,
     )
 
     # Step 5: Generate Figures & Markdown Report via report methods

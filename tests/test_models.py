@@ -31,3 +31,14 @@ def test_train_baseline_model_contract_and_cv():
     # Verify the model is fitted and can predict probabilities
     probs = result.model.predict_proba(X)
     assert probs.shape == (100, 2)
+
+
+def test_xgboost_weighting_only_when_balanced():
+    from final_project.models import get_candidate_model
+    # Unweighted should have scale_pos_weight == 1.0 even if scale_pos_weight is passed
+    model_unweighted = get_candidate_model("xgboost", balanced=False, scale_pos_weight=3.5)
+    assert model_unweighted.scale_pos_weight == 1.0
+
+    # Balanced should use scale_pos_weight
+    model_balanced = get_candidate_model("xgboost", balanced=True, scale_pos_weight=3.5)
+    assert model_balanced.scale_pos_weight == 3.5

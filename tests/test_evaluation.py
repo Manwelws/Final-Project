@@ -161,3 +161,15 @@ def test_evaluation_report_in_process_and_rendering(tmp_path):
     report.write_markdown(report_path)
     assert report_path.exists()
     assert "Holdout Evaluation Report" in report_path.read_text()
+
+
+def test_evaluation_report_single_class_guard():
+    # Only single class present (all 0s)
+    y_true = np.array([0, 0, 0, 0])
+    y_probs = np.array([0.1, 0.2, 0.3, 0.4])
+
+    report = EvaluationReport.compute(y_true=y_true, y_probs=y_probs)
+    assert report.roc_auc is None
+    assert report.pr_auc is None
+    assert report.brier_score is None
+    assert report.optimization.cost_optimal_threshold > 0.0
