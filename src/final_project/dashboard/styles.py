@@ -275,7 +275,10 @@ def render_hero(title: str, subtitle: str, badge: str | None = None) -> None:
         f'<div class="hero-subtitle">{subtitle}</div>'
         f'</div>'
     )
-    st.markdown(html, unsafe_allow_html=True)
+    if hasattr(st, "html"):
+        st.html(html)
+    else:
+        st.markdown(html, unsafe_allow_html=True)
 
 
 def render_metric_card(
@@ -313,6 +316,10 @@ def render_metric_card(
         f'</div>'
         f'</div>'
     )
-    st.markdown(html, unsafe_allow_html=True)
+    if hasattr(st, "html"):
+        st.html(html)
+    else:
+        st.markdown(html, unsafe_allow_html=True)
+
 
 
