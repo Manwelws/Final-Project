@@ -38,7 +38,7 @@ flowchart TB
         RAW[("Raw Excel Data\n7,043 × 33")]
         CLEAN[("Cleaned Features & Target\nX_features.csv + y_target.csv")]
         LIVE[("Live Streaming Batches\ndata/live/features & labels")]
-        DRIFT[("Drift Metrics & Artifacts\ndata/drift/ & data/retraining/")]
+        DRIFT[("Drift Metrics & Checkpoints\ndata/drift/ & models/retrained/")]
     end
 
     subgraph PipelineLayer["Pipeline & Training Layer (Milestone 2 - Complete)"]
@@ -401,7 +401,7 @@ stateDiagram-v2
         [*] --> ApplyExponentialSampleDecay: Weight historical samples by 0.85^weeks_old
         ApplyExponentialSampleDecay --> FitProductionModel: Clone and fit production ensemble
         FitProductionModel --> ValidateNewAUC: Evaluate on static reference & live window
-        ValidateNewAUC --> SaveRetrainedArtifacts: Export data/retraining/week_N/
+        ValidateNewAUC --> SaveRetrainedArtifacts: Export models/retrained/week_N/
     }
 
     RetrainingPipeline --> Monitoring: Update best_recent_auc

@@ -17,7 +17,7 @@ Outputs:
   data/live/labels/week_N_labels.csv       - labels released at week N+delay
   data/live/pending/                       - features awaiting labels
   data/reference/                          - static pre-drift holdout
-  data/retraining/week_N/                  - metrics & model when retrained
+  models/retrained/week_N/                 - metrics & model when retrained
   data/drift/drift_metrics.csv             - PSI & AUC per week for both strategies
 
 Every design decision is documented inline in final_project.simulation:
@@ -55,7 +55,7 @@ def main() -> None:
         models_dir=Path("models"),
         live_dir=Path("data/live"),
         reference_dir=Path("data/reference"),
-        retraining_dir=Path("data/retraining"),
+        retraining_dir=Path("models/retrained"),
         drift_dir=Path("data/drift"),
         save_artifacts=True,
     )

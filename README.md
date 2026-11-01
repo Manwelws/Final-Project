@@ -420,7 +420,7 @@ stateDiagram-v2
         [*] --> ApplyExponentialWeighting: w = 0.85^(weeks_old)
         ApplyExponentialWeighting --> FitCandidatePipeline: Fit Production Model with Sample Weights
         FitCandidatePipeline --> ValidateOnReferenceAndLive: Verify Reference AUC >= 0.84 & Live AUC Recovery
-        ValidateOnReferenceAndLive --> ExportRetrainedArtifacts: Export to data/retraining/week_N/
+        ValidateOnReferenceAndLive --> ExportRetrainedArtifacts: Export to models/retrained/week_N/
     }
 
     RetrainingEngine --> PromoteActiveModel: Overwrite models/model.joblib & metadata.json

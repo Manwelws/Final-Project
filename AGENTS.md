@@ -7,7 +7,7 @@ uv-managed Python project (Python 3.14). Core dependencies: `pandas`, `numpy`, `
 ```
 python notebooks/simulate_retraining.py
 ```
-Run from the project root. It reads `data/processed/X_features.csv` and `y_target.csv`, simulates 8 weekly batches with 2-week label lag, injects covariate + concept drift at weeks 5–8, and triggers retraining on performance decay (rolling 2-week live AUC). Outputs go to `data/live/`, `data/drift/`, `data/retraining/`.
+Run from the project root. It reads `data/processed/X_features.csv` and `y_target.csv`, simulates 8 weekly batches with 2-week label lag, injects covariate + concept drift at weeks 5–8, and triggers retraining on performance decay (rolling 2-week live AUC). Outputs go to `data/live/`, `data/drift/`, `models/retrained/`.
 
 No lint, test, typecheck, CI, or pre-commit config exists. There is no formal test suite — verify by re-running the simulator and checking output CSVs.
 
@@ -24,7 +24,7 @@ No lint, test, typecheck, CI, or pre-commit config exists. There is no formal te
 - `data/live/labels/week_N_labels.csv` — labels released at week N+2 (2-week lag)
 - `data/live/pending/` — weeks awaiting label release (weeks 7–8 after a run)
 - `data/drift/drift_metrics.csv` — per-week AUC for both strategies
-- `data/retraining/week_N/metrics.json` — retraining artifacts (weeks 3 & 7 trigger)
+- `models/retrained/week_N/metrics.json` — retraining artifacts (weeks 3 & 7 trigger)
 
 ## Simulator behavior (verified)
 Retraining triggers at weeks 3 (initial) and 7 (performance decay: recent AUC 0.8198 < best 0.8716 − 0.05). Never-retrain baseline holds flat at ~0.847 AUC on static reference. Drift starts week 5 (Monthly Charges ×1.25, Tenure ×0.7, 30% label flip on high-charge retained).

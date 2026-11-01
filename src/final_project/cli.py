@@ -294,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-save",
         action="store_true",
         default=False,
-        help="Do not save simulation artifacts to data/live, data/drift, and data/retraining",
+        help="Do not save simulation artifacts to data/live, data/drift, and models/retrained",
     )
     sim_parser.add_argument(
         "--random-state",
