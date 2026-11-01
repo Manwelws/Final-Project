@@ -270,7 +270,7 @@ def render_experiment_hub_page() -> None:
     g_col1, g_col2 = st.columns(2)
 
     with g_col1:
-        st.markdown(
+        g1_html = (
             '<div class="glass-card">'
             '<div style="font-weight: 700; font-size: 1.0rem; color: #FFFFFF; margin-bottom: 0.4rem;">'
             '🚀 Launching Local MLflow Dashboard'
@@ -284,12 +284,15 @@ def render_experiment_hub_page() -> None:
             '<br><br>'
             'Open <b>http://localhost:5000</b> to explore full run lineage, artifact downloads, and nested cross-validation runs.'
             '</div>'
-            '</div>',
-            unsafe_allow_html=True,
+            '</div>'
         )
+        if hasattr(st, "html"):
+            st.html(g1_html)
+        else:
+            st.markdown(g1_html, unsafe_allow_html=True)
 
     with g_col2:
-        st.markdown(
+        g2_html = (
             '<div class="glass-card">'
             '<div style="font-weight: 700; font-size: 1.0rem; color: #FFFFFF; margin-bottom: 0.4rem;">'
             '⚙️ Reproducing the Bayesian Optimization Study'
@@ -303,9 +306,13 @@ def render_experiment_hub_page() -> None:
             '<br><br>'
             'The search employs <code>TPESampler(seed=42)</code> with <code>MedianPruner</code> to automatically terminate unpromising parameter configurations.'
             '</div>'
-            '</div>',
-            unsafe_allow_html=True,
+            '</div>'
         )
+        if hasattr(st, "html"):
+            st.html(g2_html)
+        else:
+            st.markdown(g2_html, unsafe_allow_html=True)
+
 
 
 

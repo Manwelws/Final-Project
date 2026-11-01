@@ -622,25 +622,27 @@ def render_retention_triage_page() -> None:
     for idx, rec in enumerate(recommendations):
         col = rec_cols[idx % len(rec_cols)]
         with col:
-            st.markdown(
-                f"""
-                <div class="glass-card" style="height: 100%; margin-bottom: 0.75rem;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                        <span class="badge {rec['badge']}">{rec['priority']} PRIORITY</span>
-                    </div>
-                    <div style="font-weight: 700; font-size: 1.0rem; color: #FFFFFF; margin-bottom: 0.4rem;">
-                        {rec['strategy']}
-                    </div>
-                    <div style="font-size: 0.82rem; color: #D1D5DB; margin-bottom: 0.6rem; line-height: 1.5;">
-                        <b>Action:</b> {rec['action']}
-                    </div>
-                    <div style="font-size: 0.78rem; color: #34D399; line-height: 1.4; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.5rem;">
-                        <b>Impact:</b> {rec['expected_impact']}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            card_html = (
+                f'<div class="glass-card" style="height: 100%; margin-bottom: 0.75rem;">'
+                f'<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">'
+                f'<span class="badge {rec["badge"]}">{rec["priority"]} PRIORITY</span>'
+                f'</div>'
+                f'<div style="font-weight: 700; font-size: 1.0rem; color: #FFFFFF; margin-bottom: 0.4rem;">'
+                f'{rec["strategy"]}'
+                f'</div>'
+                f'<div style="font-size: 0.82rem; color: #D1D5DB; margin-bottom: 0.6rem; line-height: 1.5;">'
+                f'<b>Action:</b> {rec["action"]}'
+                f'</div>'
+                f'<div style="font-size: 0.78rem; color: #34D399; line-height: 1.4; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.5rem;">'
+                f'<b>Impact:</b> {rec["expected_impact"]}'
+                f'</div>'
+                f'</div>'
             )
+            if hasattr(st, "html"):
+                st.html(card_html)
+            else:
+                st.markdown(card_html, unsafe_allow_html=True)
+
 
 
 if __name__ == "__main__":
