@@ -8,8 +8,8 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# Copy dependency specification, lockfile, and package source
-COPY pyproject.toml uv.lock ./
+# Copy dependency specification, lockfile, readme, and package source
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 
 # Create venv and install exact frozen dependencies without dev tools
@@ -40,7 +40,7 @@ COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
 # Copy application source code and trained model artifacts
 COPY --chown=appuser:appgroup src/ /app/src/
 COPY --chown=appuser:appgroup models/ /app/models/
-COPY --chown=appuser:appgroup pyproject.toml /app/
+COPY --chown=appuser:appgroup pyproject.toml README.md /app/
 
 # Switch to non-root user
 USER appuser
