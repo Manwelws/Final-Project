@@ -1,6 +1,38 @@
 import argparse
-import sys
+import logging
 from pathlib import Path
+import sys
+
+class _DynamicStdout:
+    def write(self, s: str):
+        return sys.stdout.write(s)
+
+    def flush(self):
+        return sys.stdout.flush()
+
+
+class _DynamicStderr:
+    def write(self, s: str):
+        return sys.stderr.write(s)
+
+    def flush(self):
+        return sys.stderr.flush()
+
+
+logger = logging.getLogger("churn.cli")
+if not logger.handlers:
+    _out_handler = logging.StreamHandler(_DynamicStdout())
+    _out_handler.setFormatter(logging.Formatter("%(message)s"))
+    _out_handler.addFilter(lambda record: record.levelno < logging.ERROR)
+
+    _err_handler = logging.StreamHandler(_DynamicStderr())
+    _err_handler.setLevel(logging.ERROR)
+    _err_handler.setFormatter(logging.Formatter("%(message)s"))
+
+    logger.addHandler(_out_handler)
+    logger.addHandler(_err_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 from final_project.data import load_and_split_data
 from final_project.models import benchmark_candidates
@@ -327,16 +359,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.subcommand == "train":
-        print(f"Starting training pipeline...")
-        print(f"  Data directory: {args.data_dir}")
-        print(f"  Output directory: {args.output_dir}")
+        logger.info(f"Starting training pipeline...")
+        logger.info(f"  Data directory: {args.data_dir}")
+        logger.info(f"  Output directory: {args.output_dir}")
         if args.tune:
-            print(f"  Mode: Bayesian Hyperparameter Optimization (Optuna)")
-            print(f"  Tuning Budget: {args.n_trials} trials")
-            print(f"  MLflow Experiment: {args.experiment_name}")
+            logger.info(f"  Mode: Bayesian Hyperparameter Optimization (Optuna)")
+            logger.info(f"  Tuning Budget: {args.n_trials} trials")
+            logger.info(f"  MLflow Experiment: {args.experiment_name}")
         else:
-            print(f"  Algorithm: {args.algorithm} (balanced={args.balanced})")
-        print(f"  Stratified CV Folds: {args.cv_folds}")
+            logger.info(f"  Algorithm: {args.algorithm} (balanced={args.balanced})")
+        logger.info(f"  Stratified CV Folds: {args.cv_folds}")
 
         summary = run_training(
             data_dir=args.data_dir,
@@ -353,22 +385,22 @@ def main(argv: list[str] | None = None) -> int:
             random_state=args.random_state,
         )
 
-        print(f"\nTraining completed successfully!")
-        print(f"  Winning Algorithm: {summary.algorithm}")
-        print(f"  Balanced: {summary.balanced}")
-        print(f"  Train samples: {summary.train_samples}")
-        print(f"  Test samples: {summary.test_samples}")
-        print(f"  Features: {summary.feature_count}")
-        print(f"  CV Best/Mean ROC-AUC: {summary.cv_auc_mean:.4f} (+/- {summary.cv_auc_std:.4f})")
-        print(f"  Fold Scores: {[round(s, 4) for s in summary.cv_fold_scores]}")
-        print(f"  Model saved to: {summary.model_path}")
-        print(f"  Metadata saved to: {summary.metadata_path}")
+        logger.info(f"\nTraining completed successfully!")
+        logger.info(f"  Winning Algorithm: {summary.algorithm}")
+        logger.info(f"  Balanced: {summary.balanced}")
+        logger.info(f"  Train samples: {summary.train_samples}")
+        logger.info(f"  Test samples: {summary.test_samples}")
+        logger.info(f"  Features: {summary.feature_count}")
+        logger.info(f"  CV Best/Mean ROC-AUC: {summary.cv_auc_mean:.4f} (+/- {summary.cv_auc_std:.4f})")
+        logger.info(f"  Fold Scores: {[round(s, 4) for s in summary.cv_fold_scores]}")
+        logger.info(f"  Model saved to: {summary.model_path}")
+        logger.info(f"  Metadata saved to: {summary.metadata_path}")
         return 0
 
     if args.subcommand == "benchmark":
-        print("Starting multi-model candidate benchmark...")
-        print(f"  Data directory: {args.data_dir}")
-        print(f"  Stratified CV Folds: {args.cv_folds}")
+        logger.info("Starting multi-model candidate benchmark...")
+        logger.info(f"  Data directory: {args.data_dir}")
+        logger.info(f"  Stratified CV Folds: {args.cv_folds}")
 
         features_path = Path(args.data_dir) / "X_features.csv"
         target_path = Path(args.data_dir) / "y_target.csv"
@@ -401,22 +433,22 @@ def main(argv: list[str] | None = None) -> int:
             random_state=args.random_state,
         )
 
-        print(f"\nCandidate Benchmark Results ({args.cv_folds}-Fold Stratified CV):")
-        print("=" * 72)
-        print(f"{'Rank':<5} {'Model':<15} {'Weighting':<12} {'ROC-AUC (mean±std)':<20} {'PR-AUC (mean±std)':<20}")
-        print("-" * 72)
+        logger.info(f"\nCandidate Benchmark Results ({args.cv_folds}-Fold Stratified CV):")
+        logger.info("=" * 72)
+        logger.info(f"{'Rank':<5} {'Model':<15} {'Weighting':<12} {'ROC-AUC (mean±std)':<20} {'PR-AUC (mean±std)':<20}")
+        logger.info("-" * 72)
         for i, row in df.iterrows():
             roc_str = f"{row['roc_auc_mean']:.4f} ± {row['roc_auc_std']:.4f}"
             pr_str = f"{row['pr_auc_mean']:.4f} ± {row['pr_auc_std']:.4f}"
-            print(f"{i+1:<5} {row['model']:<15} {row['weighting']:<12} {roc_str:<20} {pr_str:<20}")
-        print("=" * 72)
+            logger.info(f"{i+1:<5} {row['model']:<15} {row['weighting']:<12} {roc_str:<20} {pr_str:<20}")
+        logger.info("=" * 72)
         return 0
 
     if args.subcommand == "evaluate":
-        print("Starting holdout evaluation and threshold optimization...")
-        print(f"  Model artifact: {args.model_path}")
-        print(f"  Data directory: {args.data_dir}")
-        print(f"  Cost Matrix: C_FN=${args.cost_fn:.0f}, C_FP=${args.cost_fp:.0f}")
+        logger.info("Starting holdout evaluation and threshold optimization...")
+        logger.info(f"  Model artifact: {args.model_path}")
+        logger.info(f"  Data directory: {args.data_dir}")
+        logger.info(f"  Cost Matrix: C_FN=${args.cost_fn:.0f}, C_FP=${args.cost_fp:.0f}")
 
         summary = run_evaluation(
             data_dir=args.data_dir,
@@ -433,25 +465,25 @@ def main(argv: list[str] | None = None) -> int:
         def_m = summary.default_metrics
         opt_m = summary.cost_optimal_metrics
 
-        print(f"\nHoldout Evaluation Completed Successfully!")
-        print(f"  ROC-AUC: {summary.roc_auc:.4f}")
-        print(f"  PR-AUC:  {summary.pr_auc:.4f}")
-        print(f"  Brier Score: {summary.brier_score:.4f}")
-        print(f"\nThreshold Optimization Summary:")
-        print(f"  Default Cutoff (0.50):       Recall: {def_m.recall:.2%}, Loss: ${def_m.cost:,.0f}")
-        print(f"  Optimal Cutoff ({summary.optimal_threshold:.2f}):      Recall: {opt_m.recall:.2%}, Loss: ${opt_m.cost:,.0f}")
-        print(f"  Net Financial Savings:       ${summary.cost_savings:,.2f}")
-        print(f"\nArtifacts Created:")
-        print(f"  Markdown Report: {summary.report_path}")
-        print(f"  Diagnostic Plots ({len(summary.figures)}): {Path(args.report_dir) / 'figures'}")
+        logger.info(f"\nHoldout Evaluation Completed Successfully!")
+        logger.info(f"  ROC-AUC: {summary.roc_auc:.4f}")
+        logger.info(f"  PR-AUC:  {summary.pr_auc:.4f}")
+        logger.info(f"  Brier Score: {summary.brier_score:.4f}")
+        logger.info(f"\nThreshold Optimization Summary:")
+        logger.info(f"  Default Cutoff (0.50):       Recall: {def_m.recall:.2%}, Loss: ${def_m.cost:,.0f}")
+        logger.info(f"  Optimal Cutoff ({summary.optimal_threshold:.2f}):      Recall: {opt_m.recall:.2%}, Loss: ${opt_m.cost:,.0f}")
+        logger.info(f"  Net Financial Savings:       ${summary.cost_savings:,.2f}")
+        logger.info(f"\nArtifacts Created:")
+        logger.info(f"  Markdown Report: {summary.report_path}")
+        logger.info(f"  Diagnostic Plots ({len(summary.figures)}): {Path(args.report_dir) / 'figures'}")
         return 0
 
     if args.subcommand == "explain":
-        print("Starting model explainability analysis (SHAP TreeExplainer)...")
-        print(f"  Model artifact: {args.model_path}")
-        print(f"  Data directory: {args.data_dir}")
-        print(f"  Output directory: {args.output_dir}")
-        print(f"  Sample size: {args.max_samples}")
+        logger.info("Starting model explainability analysis (SHAP TreeExplainer)...")
+        logger.info(f"  Model artifact: {args.model_path}")
+        logger.info(f"  Data directory: {args.data_dir}")
+        logger.info(f"  Output directory: {args.output_dir}")
+        logger.info(f"  Sample size: {args.max_samples}")
 
         result = run_explanation(
             data_dir=args.data_dir,
@@ -461,18 +493,18 @@ def main(argv: list[str] | None = None) -> int:
             random_state=args.random_state,
         )
 
-        print(f"\nModel Explainability Completed Successfully!")
-        print(f"  Samples explained: {result.samples_explained}")
-        print(f"\nTop Parent Feature Importances (Aggregated Mean |SHAP|):")
-        print("=" * 60)
-        print(f"{'Rank':<5} {'Parent Feature':<30} {'Mean |SHAP|':<15}")
-        print("-" * 60)
+        logger.info(f"\nModel Explainability Completed Successfully!")
+        logger.info(f"  Samples explained: {result.samples_explained}")
+        logger.info(f"\nTop Parent Feature Importances (Aggregated Mean |SHAP|):")
+        logger.info("=" * 60)
+        logger.info(f"{'Rank':<5} {'Parent Feature':<30} {'Mean |SHAP|':<15}")
+        logger.info("-" * 60)
         for i, row in result.grouped_importance.head(10).iterrows():
-            print(f"{i+1:<5} {row['parent_feature']:<30} {row['mean_abs_shap']:.4f}")
-        print("=" * 60)
-        print(f"\nGenerated Diagnostic Figures ({len(result.generated_figures)}):")
+            logger.info(f"{i+1:<5} {row['parent_feature']:<30} {row['mean_abs_shap']:.4f}")
+        logger.info("=" * 60)
+        logger.info(f"\nGenerated Diagnostic Figures ({len(result.generated_figures)}):")
         for fig in result.generated_figures:
-            print(f"  - {fig}")
+            logger.info(f"  - {fig}")
         return 0
 
     if args.subcommand == "dashboard":
@@ -492,18 +524,18 @@ def main(argv: list[str] | None = None) -> int:
             "--server.headless",
             "true" if args.headless else "false",
         ]
-        print(f"Launching ChurnOps Streamlit Dashboard on http://{args.host}:{args.port}...")
+        logger.info(f"Launching ChurnOps Streamlit Dashboard on http://{args.host}:{args.port}...")
         try:
             return subprocess.call(cmd)
         except KeyboardInterrupt:
-            print("\nDashboard server terminated by user.")
+            logger.info("\nDashboard server terminated by user.")
             return 0
 
     if args.subcommand == "serve":
         import uvicorn
         from final_project.serving.api import app as fastapi_app
 
-        print(f"Starting ChurnOps REST API inference server on http://{args.host}:{args.port}...")
+        logger.info(f"Starting ChurnOps REST API inference server on http://{args.host}:{args.port}...")
         try:
             uvicorn.run(
                 "final_project.serving.api:app" if args.reload else fastapi_app,
@@ -513,14 +545,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         except KeyboardInterrupt:
-            print("\nServing server terminated by user.")
+            logger.info("\nServing server terminated by user.")
             return 0
 
     if args.subcommand == "simulate":
-        print(f"Starting weekly streaming simulation ({args.n_weeks} weeks)...")
-        print(f"  Data directory: {args.data_dir}")
-        print(f"  Models directory: {args.models_dir}")
-        print(f"  Artifact saving: {'Disabled' if args.no_save else 'Enabled'}")
+        logger.info(f"Starting weekly streaming simulation ({args.n_weeks} weeks)...")
+        logger.info(f"  Data directory: {args.data_dir}")
+        logger.info(f"  Models directory: {args.models_dir}")
+        logger.info(f"  Artifact saving: {'Disabled' if args.no_save else 'Enabled'}")
 
         config = SimulationConfig(
             n_weeks=args.n_weeks,
@@ -534,14 +566,14 @@ def main(argv: list[str] | None = None) -> int:
             verbose=True,
         )
 
-        print(f"\nSimulation Completed Successfully!")
-        print(f"  Weeks executed: {len(results.drift_metrics)}")
-        print(f"  Retraining triggered at weeks: {results.retrained_weeks}")
+        logger.info(f"\nSimulation Completed Successfully!")
+        logger.info(f"  Weeks executed: {len(results.drift_metrics)}")
+        logger.info(f"  Retraining triggered at weeks: {results.retrained_weeks}")
         if results.final_retrain_auc_recent is not None:
-            print(f"  Final Retrained AUC (recent live): {results.final_retrain_auc_recent:.4f}")
+            logger.info(f"  Final Retrained AUC (recent live): {results.final_retrain_auc_recent:.4f}")
         return 0
 
-    print(f"Unknown subcommand: {args.subcommand}", file=sys.stderr)
+    logger.error(f"Unknown subcommand: {args.subcommand}")
     return 1
 
 

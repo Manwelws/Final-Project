@@ -1,6 +1,7 @@
 """Model interpretability module using SHAP TreeExplainer with feature grouping."""
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 from typing import Any
 import joblib
@@ -11,6 +12,8 @@ import numpy as np
 import pandas as pd
 import shap
 from sklearn.model_selection import train_test_split
+
+logger = logging.getLogger(__name__)
 
 from final_project.data import load_features_and_target
 
@@ -109,7 +112,8 @@ def get_or_create_explainer(model: Any) -> Any:
     estimator = extract_tree_estimator(model)
     try:
         return shap.TreeExplainer(estimator)
-    except Exception:
+    except (TypeError, ValueError, AttributeError, Exception) as exc:
+        logger.debug("TreeExplainer initialization not supported for %s: %s", estimator.__class__.__name__, exc)
         return None
 
 
@@ -146,8 +150,8 @@ def _compute_shap_matrix(
                     else float(exp.base_values)
                 )
             return exp_class1.values, base_val, exp_class1, "exact"
-        except Exception:
-            pass
+        except (TypeError, ValueError, AttributeError, Exception) as exc:
+            logger.debug("Cached TreeExplainer invocation failed, trying fresh TreeExplainer: %s", exc)
 
     try:
         tree_explainer = shap.TreeExplainer(estimator)
@@ -167,8 +171,8 @@ def _compute_shap_matrix(
                 else float(exp.base_values)
             )
         return exp_class1.values, base_val, exp_class1, "exact"
-    except Exception:
-        pass
+    except (TypeError, ValueError, AttributeError, Exception) as exc:
+        logger.debug("TreeExplainer evaluation failed for %s: %s", estimator.__class__.__name__, exc)
 
     # 2. Linear models / Pipelines with LogisticRegression (exact linear attribution)
     clf = estimator

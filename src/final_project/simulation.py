@@ -4,11 +4,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 import json
+import logging
 import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
 from sklearn.metrics import roc_auc_score
+
+logger = logging.getLogger(__name__)
 
 from final_project.drift import (
     compute_dataset_psi,
@@ -168,7 +171,7 @@ class StreamingBatchEngine:
             was_retained = batch["Churn Value"] == 0
             flip_mask = high_charge & was_retained & (self.rng.rand(len(batch)) < self.config.concept_flip_prob)
             batch.loc[flip_mask, "Churn Value"] = 1
-            print(f"Week {i+1}: {int(flip_mask.sum())} labels flipped due to concept drift")
+            logger.info("Week %d: %d labels flipped due to concept drift", i + 1, int(flip_mask.sum()))
 
         return weekly_batches
 
@@ -259,7 +262,7 @@ class SimulationRunner:
     def _log(self, message: str) -> None:
         """Internal logging respecting verbose flag."""
         if self.verbose:
-            print(message)
+            logger.info(message)
 
     def _resolve_base_model(self) -> Any:
         if self.base_model is not None:
@@ -505,7 +508,7 @@ class SimulationRunner:
                         "auc_on_static_reference": round(auc_ret_ref, 4) if auc_ret_ref is not None else None,
                         "never_retrain_auc_reference": round(auc_never, 4) if auc_never is not None else None,
                     }
-                    with open(retrain_dir / "metrics.json", "w") as f:
+                    with open(retrain_dir / "metrics.json", "w", encoding="utf-8") as f:
                         json.dump(metrics, f, indent=2)
                     joblib.dump(model_retrain, retrain_dir / "model.joblib")
 

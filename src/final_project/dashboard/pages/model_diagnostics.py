@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
     average_precision_score,
@@ -469,6 +472,7 @@ def render_model_diagnostics_page() -> None:
         bundle = load_model_bundle()
         meta = load_metadata()
     except Exception as exc:
+        logger.error("Failed to load dataset or model artifacts: %s", exc, exc_info=True)
         st.error(f"Failed to load dataset or model artifacts: {exc}")
         return
 

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 from final_project.data import get_stratified_split
 from final_project.dashboard.state import (
@@ -150,6 +153,7 @@ def render_kpi_overview_page() -> None:
         X, y, full_df = load_clean_dataset()
         bundle = load_model_bundle()
     except Exception as exc:
+        logger.error("Failed to load dataset or model bundle: %s", exc, exc_info=True)
         st.error(f"Failed to load dataset or model bundle: {exc}")
         return
 
