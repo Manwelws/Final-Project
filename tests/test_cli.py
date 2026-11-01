@@ -66,6 +66,15 @@ def test_cli_dashboard_launch_mock(monkeypatch):
     assert "9000" in called_cmds[0]
     assert "--server.address" in called_cmds[0]
     assert "127.0.0.1" in called_cmds[0]
+    assert "--server.headless" in called_cmds[0]
+    assert "true" in called_cmds[0]
+
+    # Test --no-headless toggle
+    exit_code2 = main(["dashboard", "--no-headless"])
+    assert exit_code2 == 0
+    assert len(called_cmds) == 2
+    assert "--server.headless" in called_cmds[1]
+    assert "false" in called_cmds[1]
 
 
 def test_cli_simulate_help(capsys):

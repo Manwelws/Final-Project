@@ -60,3 +60,22 @@ def test_explain_customer_instance_series_input():
 
     assert isinstance(explanation, CustomerExplanation)
     assert len(explanation.raw_shap_values) == 2
+    assert explanation.attribution_method == "exact"
+
+
+def test_explain_customer_instance_non_tree_fallback():
+    from sklearn.neural_network import MLPClassifier
+
+    feature_cols = ["f1", "f2", "f3"]
+    X = np.random.randn(30, 3)
+    y = np.random.choice([0, 1], size=30)
+    mlp = MLPClassifier(hidden_layer_sizes=(4,), max_iter=20, random_state=42)
+    mlp.fit(X, y)
+
+    customer_df = pd.DataFrame([X[0]], columns=feature_cols)
+    explanation = explain_customer_instance(mlp, customer_df)
+
+    assert isinstance(explanation, CustomerExplanation)
+    assert explanation.attribution_method == "approximate"
+    assert len(explanation.raw_shap_values) == 3
+

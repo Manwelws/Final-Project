@@ -250,9 +250,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dash_parser.add_argument(
         "--headless",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
-        help="Run Streamlit in headless mode without spawning local browser window",
+        help="Run Streamlit in headless mode (use --no-headless to open browser window)",
     )
 
     # Serve subcommand

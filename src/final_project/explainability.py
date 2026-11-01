@@ -47,6 +47,7 @@ class CustomerExplanation:
     risk_drivers: list[tuple[str, float]]  # Parent features pushing toward churn (+)
     protective_factors: list[tuple[str, float]]  # Parent features protecting against churn (-)
     raw_shap_values: dict[str, float]
+    attribution_method: str = "exact"
 
 
 def group_shap_by_parent_features(
@@ -103,16 +104,54 @@ def extract_tree_estimator(model: Any) -> Any:
     return model
 
 
-def _compute_shap_matrix(model: Any, X: pd.DataFrame) -> tuple[np.ndarray, float, Any]:
-    """Compute SHAP values matrix, base value, and Explanation object for any model."""
+def get_or_create_explainer(model: Any) -> Any:
+    """Instantiate a reusable SHAP explainer instance for tree models if supported."""
+    estimator = extract_tree_estimator(model)
+    try:
+        return shap.TreeExplainer(estimator)
+    except Exception:
+        return None
+
+
+def _compute_shap_matrix(
+    model: Any,
+    X: pd.DataFrame,
+    explainer: Any | None = None,
+) -> tuple[np.ndarray, float, Any, str]:
+    """Compute SHAP values matrix, base value, Explanation object, and attribution method for any model.
+
+    Returns:
+        (shap_values, base_value, exp_obj, attribution_method)
+    """
     estimator = extract_tree_estimator(model)
     feature_names = list(X.columns) if isinstance(X, pd.DataFrame) else None
     data_mat = X.to_numpy() if isinstance(X, pd.DataFrame) else np.array(X)
 
-    # 1. Try TreeExplainer first (Random Forest, LightGBM, XGBoost)
+    # 1. Try TreeExplainer (using passed explainer or creating one)
+    if explainer is not None:
+        try:
+            exp = explainer(X)
+            if exp.values.ndim == 3:
+                exp_class1 = exp[:, :, 1]
+                base_val = (
+                    float(exp.base_values[0, 1])
+                    if hasattr(exp.base_values, "ndim") and exp.base_values.ndim > 1
+                    else float(exp.base_values[0])
+                )
+            else:
+                exp_class1 = exp
+                base_val = (
+                    float(exp.base_values[0])
+                    if hasattr(exp.base_values, "__len__")
+                    else float(exp.base_values)
+                )
+            return exp_class1.values, base_val, exp_class1, "exact"
+        except Exception:
+            pass
+
     try:
-        explainer = shap.TreeExplainer(estimator)
-        exp = explainer(X)
+        tree_explainer = shap.TreeExplainer(estimator)
+        exp = tree_explainer(X)
         if exp.values.ndim == 3:
             exp_class1 = exp[:, :, 1]
             base_val = (
@@ -127,11 +166,11 @@ def _compute_shap_matrix(model: Any, X: pd.DataFrame) -> tuple[np.ndarray, float
                 if hasattr(exp.base_values, "__len__")
                 else float(exp.base_values)
             )
-        return exp_class1.values, base_val, exp_class1
+        return exp_class1.values, base_val, exp_class1, "exact"
     except Exception:
         pass
 
-    # 2. Linear models / Pipelines with LogisticRegression
+    # 2. Linear models / Pipelines with LogisticRegression (exact linear attribution)
     clf = estimator
     scaler = None
     if hasattr(model, "named_steps"):
@@ -155,9 +194,10 @@ def _compute_shap_matrix(model: Any, X: pd.DataFrame) -> tuple[np.ndarray, float
             data=data_mat,
             feature_names=feature_names,
         )
-        return shap_vals, intercept, exp_obj
+        return shap_vals, intercept, exp_obj, "exact"
 
     # 3. Model-agnostic sensitivity / perturbation attribution for Ensembles / Neural Nets
+    # Flagged explicitly as approximate attribution
     n_samples, n_feats = data_mat.shape
     baseline_prob = 0.5
     base_preds = np.full(n_samples, 0.5)
@@ -179,7 +219,7 @@ def _compute_shap_matrix(model: Any, X: pd.DataFrame) -> tuple[np.ndarray, float
         data=data_mat,
         feature_names=feature_names,
     )
-    return shap_vals, baseline_prob, exp_obj
+    return shap_vals, baseline_prob, exp_obj, "approximate"
 
 
 def run_explanation(
@@ -224,7 +264,7 @@ def run_explanation(
     else:
         X_sample, y_sample = X_test, y_test
 
-    shap_matrix, _, exp_class1 = _compute_shap_matrix(model, X_sample)
+    shap_matrix, _, exp_class1, _ = _compute_shap_matrix(model, X_sample)
     feature_names = list(X_sample.columns)
 
     grouped_df = group_shap_by_parent_features(shap_matrix, feature_names)
@@ -310,13 +350,28 @@ def run_explanation(
     plt.close("all")
     generated_figures.append(churner_fig_path)
 
-    # 6. Local Waterfall Plot: Sample Retained Customer (True negative or low risk)
-    retained_indices = np.where(y_sample.to_numpy() == 0)[0]
-    retained_idx = int(retained_indices[0]) if len(retained_indices) > 0 else 0
+    # 6. Local Waterfall Plot: False Positive Customer (predicted churn, actually retained)
+    y_arr = y_sample.to_numpy()
+    if hasattr(model, "predict_proba"):
+        probs = model.predict_proba(X_sample)[:, 1]
+    elif hasattr(estimator, "predict_proba"):
+        probs = estimator.predict_proba(X_sample.to_numpy())[:, 1]
+    else:
+        probs = np.full(len(X_sample), 0.5)
+
+    fp_indices = np.where((y_arr == 0) & (probs >= 0.50))[0]
+    if len(fp_indices) == 0:
+        retained_indices = np.where(y_arr == 0)[0]
+        if len(retained_indices) > 0:
+            fp_idx = int(retained_indices[np.argmax(probs[retained_indices])])
+        else:
+            fp_idx = 0
+    else:
+        fp_idx = int(fp_indices[0])
 
     plt.figure(figsize=(9, 6), dpi=300)
-    shap.plots.waterfall(exp_class1[retained_idx], max_display=10, show=False)
-    plt.title("Individual Risk Factors: Retained Customer", fontsize=12, fontweight="bold")
+    shap.plots.waterfall(exp_class1[fp_idx], max_display=10, show=False)
+    plt.title("Individual Risk Factors: False Positive (Predicted Churn, Actually Retained)", fontsize=12, fontweight="bold")
     plt.tight_layout()
     retained_fig_path = output_dir / "shap_waterfall_retained.png"
     plt.savefig(retained_fig_path, bbox_inches="tight")
@@ -334,6 +389,7 @@ def explain_customer_instance(
     model: Any,
     customer_features: pd.DataFrame | pd.Series | np.ndarray,
     feature_names: list[str] | None = None,
+    explainer: Any | None = None,
 ) -> CustomerExplanation:
     """Compute local TreeExplainer attribution with signed parent feature aggregation for a single customer."""
     # Normalize customer_features into 1-row DataFrame
@@ -371,7 +427,7 @@ def explain_customer_instance(
     else:
         churn_prob = 0.0
 
-    shap_matrix, base_val, _ = _compute_shap_matrix(model, df)
+    shap_matrix, base_val, _, method = _compute_shap_matrix(model, df, explainer=explainer)
     shap_vals = shap_matrix[0]
 
     raw_shap_values = {
@@ -414,5 +470,6 @@ def explain_customer_instance(
         risk_drivers=risk_drivers,
         protective_factors=protective_factors,
         raw_shap_values=raw_shap_values,
+        attribution_method=method,
     )
 
