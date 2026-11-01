@@ -104,3 +104,12 @@ src/final_project/serving/
 - `src/final_project/serving/adapter.py`
 - `src/final_project/serving/api.py`
 - `Dockerfile` build & container health probe.
+
+---
+
+## As-Built Deltas
+
+- **Health Probe Architecture**: Separated endpoint contracts into `/health` (shallow liveness check for container orchestrators returning 200 without model dependencies) and `/ready` (deep readiness check confirming the model bundle is deserialized in memory and returning model algorithm/cutoff).
+- **Flexible Batch Scoring Ingestion**: Extended `/predict/batch` to natively accept both JSON arrays of items (`[{"tenure": 12, ...}]`) and object dictionaries (`{"items": [...]}` or `{"profiles": [...]}`).
+- **Pydantic v2 Strictness**: All schemas use Pydantic v2 strict typing and support customer identifiers preserved end-to-end.
+

@@ -133,7 +133,7 @@
   1. **Unsupervised Drift**: Population Stability Index (PSI) computed on streaming features ($PSI > 0.25 \to$ Significant Shift).
   2. **Supervised Performance Decay**: Rolling live 2-week ROC-AUC decay ($AUC_{\text{recent}} < AUC_{\text{best}} - 0.05$).
 * **Speaker Script**:
-  > *"In ADR 0001, we replaced toy simulator equations with our actual production model. We simulated an 8-week production lifecycle with a realistic 2-week label delay. When covariate and concept drift were injected in week 5, our unsupervised PSI jumped from 0.002 to 0.23, and our rolling performance decay detector automatically triggered retraining cycles at weeks 5, 7, and 8, preventing model obsolescence."*
+  > *"In ADR 0001, we replaced toy simulator equations with our actual production model. We simulated an 8-week production lifecycle with a realistic 2-week label delay. When covariate and concept drift were injected in week 5, our unsupervised PSI jumped from 0.002 to 0.23, and our rolling performance decay detector automatically triggered retraining cycles at weeks 3, 5, and 7, preventing model obsolescence."*
 
 ---
 
@@ -152,7 +152,8 @@
 
 ### Slide 10: Milestone 3 — Production Serving, FastAPI & Container Architecture
 * **FastAPI Microservice (`src/final_project/serving/`)**:
-  - `GET /health` (Readiness, liveness, model metadata).
+  - `GET /health` (Shallow liveness probe).
+  - `GET /ready` (Deep readiness probe and model bundle verification).
   - `POST /predict` (Single customer real-time inference with risk score and triage tier: Low, Moderate, High, Severe).
   - `POST /predict/batch` (High-throughput portfolio scoring).
   - `POST /explain` (Real-time customer-level SHAP attributions with parent group clustering).

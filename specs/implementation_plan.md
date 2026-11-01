@@ -529,3 +529,15 @@ docker run -d -p 8000:8000 --name churn-service churn-prediction-api:latest
 curl http://localhost:8000/health
 docker stop churn-service && docker rm churn-service
 ```
+
+---
+
+## As-Built Deltas & Technical Reconciliation
+
+During implementation and production hardening across Stages 0 through 5, the following technical reconciliations and architecture enhancements were integrated:
+- **MLflow Tracking Backend**: Standardized on SQLite (`sqlite:///mlflow.db`) rather than filesystem-only `./mlruns` directory storage, ensuring thread safety, ACID guarantees, and seamless querying from both CLI and Streamlit dashboard.
+- **Retraining Artifact Locations**: Retrained weekly models and performance metrics are persisted to `models/retrained/week_N/` (containing `model.joblib` and `metrics.json`) instead of `data/retraining/`.
+- **Expanded Candidate Model Architectures**: Extended candidate model factories (`src/final_project/models.py`) to support Multi-Layer Perceptrons (`mlp`), Logistic Regression pipelines, Bagged Logistic Regression, KNN, Soft Voting, and Stacking classifiers alongside tree ensembles.
+- **Simulation Timeline & Baseline**: The streaming retraining simulation triggers at weeks 3 (initial warm-up), 5, and 7 upon supervised performance decay (rolling 2-week live AUC drops > 0.05 from best historical). The never-retrain baseline holds flat at ~0.836 AUC on static reference data.
+- **REST API Enhancements**: Implemented decoupled `/health` (shallow liveness) and `/ready` (deep model bundle verification) endpoints, and added flexible batch scoring payloads supporting raw lists `[...]` or envelope dictionaries `{"items": [...]}`.
+

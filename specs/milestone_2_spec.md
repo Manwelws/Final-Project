@@ -106,3 +106,13 @@ Build a modular production machine learning pipeline and CLI interface that:
 - Live HTTP/REST serving microservices (FastAPI/Flask endpoints) — scheduled for Milestone 3.
 - Remote cloud experiment registries (AWS S3, Databricks MLflow) — tracking is local.
 - Real-time streaming prediction or Kafka integration.
+
+---
+
+## As-Built Deltas
+
+- **Experiment Tracking Storage**: MLflow tracking uses an embedded SQLite database (`sqlite:///mlflow.db`) to enable ACID queries and robust run aggregation.
+- **Expanded Candidate Architectures**: Implemented `MLPClassifier`, `LogisticRegression` pipeline, `BaggingClassifier`, `KNN`, and ensemble models (`VotingClassifier`, `StackingClassifier`) alongside tree models.
+- **Simulation Trigger Timeline**: Simulation triggers at weeks 3, 5, and 7 on performance decay; never-retrain baseline holds at ~0.836 AUC on static reference.
+- **Retrained Artifact Directory**: Retrained models and metrics are saved to `models/retrained/week_N/`.
+

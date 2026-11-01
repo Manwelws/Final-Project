@@ -34,17 +34,25 @@ A two-tiered monitoring strategy to handle label lag:
 2. **Supervised Retraining Trigger (Delayed)**: Evaluated on Week $N+2$ ground truth labels when rolling live AUC drops below historical best minus a threshold (0.05).
 _Avoid_: Drift trigger without labels, single-tier monitoring
 
+**Live AUC**:
+The rolling out-of-sample ROC-AUC computed across the most recent 2 weeks of released ground-truth labels (weeks $N-2$ and $N-3$). Measures contemporary model discrimination on delayed incoming production batches.
+_Avoid_: In-sample AUC, offline AUC, reference AUC
+
+**Performance Decay Trigger**:
+The supervised decision rule that initiates model retraining when recent rolling Live AUC drops by more than a configured delta ($\ge 0.05$) below the champion model's historical peak Live AUC.
+_Avoid_: Static schedule retraining, retrain on unsupervised PSI alone
+
 **Exponential Sample Decay**:
 The retraining data weighting scheme that includes historical data but downweights older weeks by a discount factor (e.g. $0.85^{\text{weeks\_old}}$), ensuring post-drift data guides model updates without discarding sample volume.
 _Avoid_: Expanding window (dilutes drift adaptation), sliding window (drastically reduces sample size)
 
-**Cost-Utility Threshold Optimization**:
-Selecting the probability cutoff that minimizes total expected business loss ($C_{\text{FN}} \cdot \text{FN} + C_{\text{FP}} \cdot \text{FP}$), where missed churners carry substantially higher penalty than unnecessary retention offers.
-_Avoid_: Symmetric F1 cutoff, arbitrary 0.5 default
+**Cost-Optimal Cutoff (Decision Threshold)**:
+The calibrated classification threshold $\tau$ (empirically derived as `0.12` under $C_{\text{FN}}=\$200$ and $C_{\text{FP}}=\$20$) that minimizes expected financial loss on the holdout portfolio. Any customer with predicted churn probability $\ge \tau$ is triaged for retention intervention.
+_Avoid_: Arbitrary 0.5 default, untuned threshold, symmetric F1 cutoff
 
 **Reference Data**:
-A static pre-drift holdout dataset used to evaluate the never-retrain baseline. Not used for training.
-_Avoid_: Baseline data, test set (ambiguous)
+A static pre-drift holdout slice of customer data used solely to benchmark the never-retrain baseline across all weeks. It is strictly isolated from retraining to measure long-term baseline drift.
+_Avoid_: Baseline data, test set (ambiguous), training holdout
 
 **Imbalance Strategy**:
 The technique used to handle class imbalance in training data. Restricted to algorithmic class weighting (`class_weight='balanced'`, `scale_pos_weight`) to preserve binary one-hot integrity and probability calibration.
