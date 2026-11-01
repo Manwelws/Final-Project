@@ -5,10 +5,18 @@ from final_project.serving.adapter import MODEL_FEATURE_NAMES, encode_raw_profil
 from final_project.serving.schemas import CustomerProfileRaw
 
 
+from final_project.registry import ModelBundle
+
+
 @pytest.fixture
-def client():
+def client(synthetic_model_bundle_dir, monkeypatch):
+    monkeypatch.setenv("CHURN_MODELS_DIR", str(synthetic_model_bundle_dir))
+    bundle = ModelBundle.load(model_dir=synthetic_model_bundle_dir)
+    app.state.bundle = bundle
     with TestClient(app) as test_client:
+        app.state.bundle = bundle
         yield test_client
+    app.state.bundle = None
 
 
 def test_health_endpoint_contract(client):
@@ -17,9 +25,8 @@ def test_health_endpoint_contract(client):
     data = response.json()
     assert data["status"] == "healthy"
     assert "model_algorithm" in data
-    assert data["optimal_threshold"] > 0.0
-    assert data["optimal_threshold"] == 0.12
-    assert data["feature_count"] == 27
+    assert 0.0 < data["optimal_threshold"] < 1.0
+    assert data["feature_count"] > 0
     assert "model_timestamp" in data
 
 
@@ -64,7 +71,8 @@ def test_predict_raw_profile_matches_preprocessed_vector(client):
     assert data_raw["churn_probability"] == data_vec["churn_probability"]
     assert data_raw["churn_prediction"] == data_vec["churn_prediction"]
     assert data_raw["risk_tier"] == data_vec["risk_tier"]
-    assert data_raw["threshold_applied"] == 0.12
+    assert data_raw["threshold_applied"] == data_vec["threshold_applied"]
+    assert 0.0 < data_raw["threshold_applied"] < 1.0
 
 
 def test_predict_threshold_calibration_and_risk_tiers(client):

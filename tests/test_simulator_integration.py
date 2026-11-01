@@ -3,8 +3,8 @@ import pandas as pd
 import json
 
 
-def test_drift_metrics_csv_structure_and_values():
-    drift_csv = Path("data/drift/drift_metrics.csv")
+def test_drift_metrics_csv_structure_and_values(synthetic_simulation_artifacts):
+    drift_csv, _ = synthetic_simulation_artifacts
     assert drift_csv.exists(), "drift_metrics.csv should be created by the simulator"
 
     df = pd.read_csv(drift_csv)
@@ -38,8 +38,8 @@ def test_drift_metrics_csv_structure_and_values():
     assert 7 in retrained_weeks
 
 
-def test_retraining_artifacts_saved():
-    retrain_dir = Path("models/retrained")
+def test_retraining_artifacts_saved(synthetic_simulation_artifacts):
+    _, retrain_dir = synthetic_simulation_artifacts
     assert retrain_dir.exists()
 
     # Check week 7 retraining artifacts

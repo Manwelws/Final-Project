@@ -711,7 +711,7 @@ uv run churn dashboard --port 8501 --host 0.0.0.0
 │       ├── styles.py             # Dark modern design system tokens
 │       ├── state.py              # Cached loaders & KPI calculations
 │       └── pages/                # 5 dedicated dashboard views
-├── tests/                        # 65 automated pytest test cases
+├── tests/                        # 75 automated pytest test cases across 22 modules
 ├── docker-compose.yml
 ├── Dockerfile
 ├── pyproject.toml
