@@ -53,6 +53,7 @@
   "test_samples": 1409,
   "feature_count": 27,
   "model_artifact": "model.joblib",
+  "model_sha256": "afe133c734fc4096900a8f69da3162bab38d47ff38d73fbb3b6f4f5fb5b4b38e",
   "threshold_comparison": {
     "default_0_50": {
       "threshold": 0.5,
