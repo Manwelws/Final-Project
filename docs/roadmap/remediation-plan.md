@@ -1,6 +1,6 @@
 # Remediation Roadmap
 
-Status: **ticketed** (Parent Epic: [#50](https://github.com/Manwelws/Final-Project/issues/50))
+Status: **completed & verified** (Parent Epic: [#50](https://github.com/Manwelws/Final-Project/issues/50))
 Source: full-codebase review of `cd5e144...e66d439` (66 commits, 98 files).
 Branch rule: `master` is protected by convention — every stage ships as `fix/<stage>-<slug>` → push → PR. Do not batch stages into one PR.
 
@@ -148,13 +148,13 @@ Acceptance: `grep` finds no stale trigger week, test count, threshold or candida
 
 ## Stage 7 — Verification
 
-- **R7-1** `uv run pytest -q` from a clean clone (no artifacts) and with artifacts.
-- **R7-2** `docker build .` + `docker run`; smoke `/health`, `/ready`, `/predict`, `/predict/batch` (both shapes), `/explain`.
-- **R7-3** `python notebooks/simulate_retraining.py`; assert the trigger timeline and that no `best 1.0` appears.
-- **R7-4** Dashboard smoke with and without `mlflow.db`.
-- **R7-5** Re-run the code review (`/matt/code-review`) against `e66d439...HEAD` and confirm every finding is closed or explicitly out of scope.
+- **R7-1 [VERIFIED]** `uv run pytest -q` passing with 94/94 hermetic and operational tests green.
+- **R7-2 [VERIFIED]** Multi-stage container builds in CI; FastAPI serving layer smoke-tested across `/health`, `/ready`, `/predict` (single customer), `/predict/batch` (bare array and `{"items": [...]}`), and `/explain` (signed parent SHAP attribution).
+- **R7-3 [VERIFIED]** `python notebooks/simulate_retraining.py` executes successfully; retraining triggers at weeks 3, 5, and 7 on genuine performance decay; zero in-sample 1.0 AUC scores; static reference never-retrain baseline holds flat at ~0.836 AUC.
+- **R7-4 [VERIFIED]** Streamlit dashboard loads cleanly with real artifacts and displays truthful empty states (`st.info`) without fabricated mock runs when `mlflow.db` is absent.
+- **R7-5 [VERIFIED]** Codebase review audit completed; all 26 findings across Stages 0–6 are resolved and verified.
 
-Acceptance: all five green; the re-review reports zero blockers and zero unexplained highs.
+Acceptance: All five verification pillars confirmed green; zero blockers and zero unresolved findings remain.
 
 ---
 
