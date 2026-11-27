@@ -24,6 +24,7 @@ from final_project.evaluation import (
     ThresholdMetrics,
     OptimizationResult,
     EvaluationSummary,
+    EvaluationContext,
     EvaluationReport,
 )
 from final_project.explainability import (
@@ -97,6 +98,7 @@ __all__ = [
     "ThresholdMetrics",
     "OptimizationResult",
     "EvaluationSummary",
+    "EvaluationContext",
     "EvaluationReport",
     "run_explanation",
     "group_shap_by_parent_features",

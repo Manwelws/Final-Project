@@ -35,7 +35,11 @@ if not logger.handlers:
     logger.propagate = False
 
 from final_project.data import load_and_split_data
-from final_project.models import benchmark_candidates
+from final_project.models import (
+    BENCHMARK_ALL_ALGORITHMS,
+    CLI_ALGORITHM_CHOICES,
+    benchmark_candidates,
+)
 from final_project.pipeline import run_training
 from final_project.evaluation import run_evaluation
 from final_project.explainability import run_explanation
@@ -67,22 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--algorithm",
         type=str,
         default="random_forest",
-        choices=[
-            "random_forest",
-            "lightgbm",
-            "xgboost",
-            "rf",
-            "lgb",
-            "xgb",
-            "logistic_regression",
-            "logistic",
-            "lr",
-            "bagged_logistic",
-            "bagged_lr",
-            "mlp",
-            "voting_ensemble",
-            "stacking_ensemble",
-        ],
+        choices=CLI_ALGORITHM_CHOICES,
         help="Model algorithm to train (default: random_forest)",
     )
     train_parser.add_argument(
@@ -411,16 +400,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         algos = (
-            [
-                "random_forest",
-                "lightgbm",
-                "xgboost",
-                "logistic_regression",
-                "bagged_logistic",
-                "mlp",
-                "voting_ensemble",
-                "stacking_ensemble",
-            ]
+            list(BENCHMARK_ALL_ALGORITHMS)
             if getattr(args, "all", False)
             else None
         )

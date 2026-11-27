@@ -44,6 +44,8 @@ class ModelMetadata:
     cv_auc_std: float = 0.0
     cv_fold_scores: list[float] = field(default_factory=list)
     train_samples: int = 0
+    pre_refit_train_samples: int | None = None
+    val_samples: int | None = None
     test_samples: int = 0
     feature_count: int = 0
     model_artifact: str = "model.joblib"
@@ -55,15 +57,17 @@ class ModelMetadata:
     def to_dict(self) -> dict[str, Any]:
         """Convert metadata to dictionary for serialization."""
         d = asdict(self)
-        # Prune None values for optional trial fields if not set
-        if self.best_params is None:
-            d.pop("best_params", None)
-        if self.n_trials is None:
-            d.pop("n_trials", None)
-        if self.mlflow_experiment_id is None:
-            d.pop("mlflow_experiment_id", None)
-        if self.threshold_comparison is None:
-            d.pop("threshold_comparison", None)
+        # Prune None values for optional fields if not set
+        for optional_key in (
+            "best_params",
+            "n_trials",
+            "mlflow_experiment_id",
+            "threshold_comparison",
+            "pre_refit_train_samples",
+            "val_samples",
+        ):
+            if d.get(optional_key) is None:
+                d.pop(optional_key, None)
         return d
 
     @classmethod

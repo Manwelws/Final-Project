@@ -38,6 +38,95 @@ class ModelCVMetrics:
     pr_auc_std: float
 
 
+@dataclass(frozen=True)
+class AlgorithmSpec:
+    canonical_name: str
+    aliases: tuple[str, ...]
+    display_name: str
+    supports_class_weighting: bool = True
+
+
+CANDIDATE_ALGORITHM_SPECS: tuple[AlgorithmSpec, ...] = (
+    AlgorithmSpec(
+        canonical_name="random_forest",
+        aliases=("rf",),
+        display_name="Random Forest",
+    ),
+    AlgorithmSpec(
+        canonical_name="lightgbm",
+        aliases=("lgbm", "lgb"),
+        display_name="LightGBM",
+    ),
+    AlgorithmSpec(
+        canonical_name="xgboost",
+        aliases=("xgb",),
+        display_name="XGBoost",
+    ),
+    AlgorithmSpec(
+        canonical_name="logistic_regression",
+        aliases=("lr", "logistic"),
+        display_name="Logistic Regression (Scaled)",
+    ),
+    AlgorithmSpec(
+        canonical_name="bagged_logistic",
+        aliases=("bagged_lr",),
+        display_name="Bagged Logistic Regression",
+    ),
+    AlgorithmSpec(
+        canonical_name="mlp",
+        aliases=("neural_network", "mlp_classifier"),
+        display_name="MLP Neural Network (Scaled)",
+    ),
+    AlgorithmSpec(
+        canonical_name="knn",
+        aliases=("kneighbors",),
+        display_name="K-Nearest Neighbors (Scaled)",
+        supports_class_weighting=False,
+    ),
+    AlgorithmSpec(
+        canonical_name="voting_ensemble",
+        aliases=("voting",),
+        display_name="Soft Voting Ensemble (Tree + Linear)",
+    ),
+    AlgorithmSpec(
+        canonical_name="stacking_ensemble",
+        aliases=("stacking",),
+        display_name="Stacking Ensemble (Tree + Linear -> LR)",
+    ),
+)
+
+_SPEC_BY_NAME: dict[str, AlgorithmSpec] = {
+    alias: spec
+    for spec in CANDIDATE_ALGORITHM_SPECS
+    for alias in (spec.canonical_name, *spec.aliases)
+}
+
+CLI_ALGORITHM_CHOICES: list[str] = [
+    name
+    for spec in CANDIDATE_ALGORITHM_SPECS
+    for name in (spec.canonical_name, *spec.aliases)
+]
+
+BENCHMARK_ALL_ALGORITHMS: list[str] = [
+    spec.canonical_name for spec in CANDIDATE_ALGORITHM_SPECS
+]
+
+SUPPORTED_ALGORITHMS_ERROR_LIST: str = ", ".join(
+    f"'{spec.canonical_name}'" for spec in CANDIDATE_ALGORITHM_SPECS
+)
+
+
+def _normalize_key(name: str) -> str:
+    return name.lower().replace("-", "_").replace(" ", "_")
+
+
+def normalize_algorithm_name(name: str) -> str:
+    """Normalize an algorithm name or alias to its canonical identifier."""
+    key = _normalize_key(name)
+    spec = _SPEC_BY_NAME.get(key)
+    return spec.canonical_name if spec is not None else key
+
+
 def compute_scale_pos_weight(y: pd.Series) -> float:
     """Compute negative / positive ratio for XGBoost scale_pos_weight balancing."""
     counts = y.value_counts()
@@ -48,6 +137,13 @@ def compute_scale_pos_weight(y: pd.Series) -> float:
     return float(neg_count / pos_count)
 
 
+def supports_class_weighting(name: str) -> bool:
+    """Return whether the given candidate algorithm accepts class weighting."""
+    canonical_name = normalize_algorithm_name(name)
+    spec = _SPEC_BY_NAME.get(canonical_name)
+    return spec.supports_class_weighting if spec is not None else True
+
+
 def get_candidate_model(
     name: str,
     balanced: bool = False,
@@ -56,9 +152,9 @@ def get_candidate_model(
     **kwargs: Any,
 ) -> BaseEstimator:
     """Instantiate a tree-based, linear, neural, or ensemble candidate classifier with class weighting."""
-    normalized_name = name.lower().replace("-", "_").replace(" ", "_")
+    canonical_name = normalize_algorithm_name(name)
 
-    if normalized_name in ("random_forest", "rf"):
+    if canonical_name == "random_forest":
         class_weight = "balanced" if balanced else None
         return RandomForestClassifier(
             random_state=random_state,
@@ -66,7 +162,7 @@ def get_candidate_model(
             **kwargs,
         )
 
-    elif normalized_name in ("lightgbm", "lgbm", "lgb"):
+    elif canonical_name == "lightgbm":
         class_weight = "balanced" if balanced else None
         return LGBMClassifier(
             random_state=random_state,
@@ -75,7 +171,7 @@ def get_candidate_model(
             **kwargs,
         )
 
-    elif normalized_name in ("xgboost", "xgb"):
+    elif canonical_name == "xgboost":
         weight = scale_pos_weight if (balanced and scale_pos_weight is not None) else 1.0
         return XGBClassifier(
             random_state=random_state,
@@ -84,7 +180,7 @@ def get_candidate_model(
             **kwargs,
         )
 
-    elif normalized_name in ("logistic_regression", "lr", "logistic"):
+    elif canonical_name == "logistic_regression":
         class_weight = "balanced" if balanced else None
         max_iter = kwargs.pop("max_iter", 1000)
         c_val = kwargs.pop("C", 1.0)
@@ -102,7 +198,7 @@ def get_candidate_model(
             ),
         ])
 
-    elif normalized_name in ("bagged_logistic", "bagged_lr"):
+    elif canonical_name == "bagged_logistic":
         class_weight = "balanced" if balanced else None
         n_estimators = kwargs.pop("n_estimators", 30)
         base_lr = Pipeline([
@@ -123,7 +219,7 @@ def get_candidate_model(
             random_state=random_state,
         )
 
-    elif normalized_name in ("mlp", "neural_network", "mlp_classifier"):
+    elif canonical_name == "mlp":
         hidden_layer_sizes = kwargs.pop("hidden_layer_sizes", (64, 32))
         max_iter = kwargs.pop("max_iter", 500)
         alpha = kwargs.pop("alpha", 0.001)
@@ -142,7 +238,7 @@ def get_candidate_model(
             ),
         ])
 
-    elif normalized_name in ("knn", "kneighbors"):
+    elif canonical_name == "knn":
         n_neighbors = kwargs.pop("n_neighbors", 15)
         return Pipeline([
             ("scaler", StandardScaler()),
@@ -155,7 +251,7 @@ def get_candidate_model(
             ),
         ])
 
-    elif normalized_name in ("voting_ensemble", "voting"):
+    elif canonical_name == "voting_ensemble":
         class_weight = "balanced" if balanced else None
         lgb_est = LGBMClassifier(
             random_state=random_state,
@@ -187,7 +283,7 @@ def get_candidate_model(
             **kwargs,
         )
 
-    elif normalized_name in ("stacking_ensemble", "stacking"):
+    elif canonical_name == "stacking_ensemble":
         class_weight = "balanced" if balanced else None
         lgb_est = LGBMClassifier(
             random_state=random_state,
@@ -224,8 +320,7 @@ def get_candidate_model(
 
     else:
         raise ValueError(
-            f"Unsupported algorithm '{name}'. Choose from 'random_forest', 'lightgbm', 'xgboost', "
-            f"'logistic_regression', 'bagged_logistic', 'mlp', 'voting_ensemble', 'stacking_ensemble'."
+            f"Unsupported algorithm '{name}'. Choose from {SUPPORTED_ALGORITHMS_ERROR_LIST}."
         )
 
 
@@ -325,31 +420,16 @@ def benchmark_candidates(
 
     scale_pos_weight = compute_scale_pos_weight(y)
     display_names = {
-        "random_forest": "Random Forest",
-        "rf": "Random Forest",
-        "lightgbm": "LightGBM",
-        "lgbm": "LightGBM",
-        "lgb": "LightGBM",
-        "xgboost": "XGBoost",
-        "xgb": "XGBoost",
-        "logistic_regression": "Logistic Regression (Scaled)",
-        "logistic": "Logistic Regression (Scaled)",
-        "lr": "Logistic Regression (Scaled)",
-        "bagged_logistic": "Bagged Logistic Regression",
-        "bagged_lr": "Bagged Logistic Regression",
-        "mlp": "MLP Neural Network (Scaled)",
-        "neural_network": "MLP Neural Network (Scaled)",
-        "knn": "K-Nearest Neighbors (Scaled)",
-        "voting_ensemble": "Soft Voting Ensemble (Tree + Linear)",
-        "voting": "Soft Voting Ensemble (Tree + Linear)",
-        "stacking_ensemble": "Stacking Ensemble (Tree + Linear -> LR)",
-        "stacking": "Stacking Ensemble (Tree + Linear -> LR)",
+        spec.canonical_name: spec.display_name
+        for spec in CANDIDATE_ALGORITHM_SPECS
     }
 
     records = []
     for algo in algorithms:
-        d_name = display_names.get(algo.lower(), algo)
-        for balanced in [False, True]:
+        canonical_name = normalize_algorithm_name(algo)
+        d_name = display_names.get(canonical_name, algo)
+        weighting_modes = [False, True] if supports_class_weighting(canonical_name) else [False]
+        for balanced in weighting_modes:
             model = get_candidate_model(
                 algo,
                 balanced=balanced,

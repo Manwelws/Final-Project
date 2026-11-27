@@ -1,14 +1,49 @@
 """Shared pytest fixtures for hermetic test execution."""
 
+from collections.abc import Sequence
 import json
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.datasets import make_classification
 from sklearn.ensemble import RandomForestClassifier
 
 from final_project.registry import ModelBundle, ModelMetadata
 from final_project.serving.adapter import MODEL_FEATURE_NAMES
+
+
+@pytest.fixture
+def classification_data_factory():
+    """Return a factory that generates synthetic classification CSVs in a directory."""
+
+    def _create(
+        data_dir: Path,
+        *,
+        n_samples: int = 100,
+        n_features: int = 5,
+        n_informative: int = 3,
+        n_redundant: int = 2,
+        weights: Sequence[float] | None = None,
+        random_state: int = 42,
+        col_prefix: str = "f_",
+    ) -> tuple[pd.DataFrame, np.ndarray]:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        X_mat, y_vec = make_classification(
+            n_samples=n_samples,
+            n_features=n_features,
+            n_informative=n_informative,
+            n_redundant=n_redundant,
+            weights=weights,
+            random_state=random_state,
+        )
+        feature_cols = [f"{col_prefix}{i}" for i in range(n_features)]
+        X_df = pd.DataFrame(X_mat, columns=feature_cols)
+        X_df.to_csv(data_dir / "X_features.csv", index=False)
+        pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
+        return X_df, y_vec
+
+    return _create
 
 
 @pytest.fixture
