@@ -15,7 +15,11 @@ import mlflow
 os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
 os.environ["MLFLOW_DISABLE_AGENT_HINT"] = "1"
 
-from final_project.models import get_candidate_model, compute_scale_pos_weight
+from final_project.models import (
+    get_candidate_model,
+    compute_scale_pos_weight,
+    supports_class_weighting,
+)
 
 
 @dataclass(frozen=True)
@@ -37,7 +41,10 @@ def _build_model_from_trial(
     """Sample hyperparameters for a candidate architecture from Optuna trial."""
     candidate_algos = algorithms or ["random_forest", "lightgbm", "xgboost"]
     algorithm = trial.suggest_categorical("algorithm", candidate_algos)
-    balanced = trial.suggest_categorical("balanced", [True, False])
+    if supports_class_weighting(algorithm):
+        balanced = trial.suggest_categorical("balanced", [True, False])
+    else:
+        balanced = False
 
     params: dict[str, Any] = {"algorithm": algorithm, "balanced": balanced}
 
@@ -148,6 +155,24 @@ def _build_model_from_trial(
             balanced=balanced,
             random_state=random_state,
             alpha=alpha,
+        )
+
+    elif algorithm in ("knn", "kneighbors"):
+        n_neighbors = trial.suggest_int("knn_n_neighbors", 3, 25, step=2)
+        weights = trial.suggest_categorical("knn_weights", ["uniform", "distance"])
+        p = trial.suggest_int("knn_p", 1, 2)
+        params.update({
+            "n_neighbors": n_neighbors,
+            "weights": weights,
+            "p": p,
+        })
+        model = get_candidate_model(
+            "knn",
+            balanced=False,
+            random_state=random_state,
+            n_neighbors=n_neighbors,
+            weights=weights,
+            p=p,
         )
 
     elif algorithm in ("voting_ensemble", "voting"):
@@ -271,7 +296,7 @@ def run_tuning_study(
 
     best_trial = study.best_trial
     best_algorithm = best_trial.params["algorithm"]
-    best_balanced = best_trial.params["balanced"]
+    best_balanced = best_trial.params.get("balanced", False)
 
     # Reconstruct winning model and fit on complete training dataset
     _, _, best_clean_params, best_estimator = _build_model_from_trial(

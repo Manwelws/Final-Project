@@ -80,6 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
             "bagged_logistic",
             "bagged_lr",
             "mlp",
+            "knn",
+            "kneighbors",
             "voting_ensemble",
             "stacking_ensemble",
         ],
@@ -418,6 +420,7 @@ def main(argv: list[str] | None = None) -> int:
                 "logistic_regression",
                 "bagged_logistic",
                 "mlp",
+                "knn",
                 "voting_ensemble",
                 "stacking_ensemble",
             ]

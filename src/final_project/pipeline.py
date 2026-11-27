@@ -6,9 +6,13 @@ import joblib
 import pandas as pd
 
 from final_project.data import load_and_split_data
-from final_project.models import train_candidate_model, train_baseline_model
+from final_project.models import (
+    supports_class_weighting,
+    train_baseline_model,
+    train_candidate_model,
+)
 from final_project.tuning import run_tuning_study
-from final_project.registry import ModelMetadata
+from final_project.registry import ModelMetadata, compute_sha256
 
 
 @dataclass(frozen=True)
@@ -26,6 +30,8 @@ class PipelineRunSummary:
     random_state: int
     model_path: str
     metadata_path: str
+    pre_refit_train_samples: int = 0
+    val_samples: int = 0
 
 
 def run_training(
@@ -99,9 +105,10 @@ def run_training(
         cv_auc_mean = result.cv_auc_mean
         cv_auc_std = result.cv_auc_std
         cv_fold_scores = result.cv_fold_scores
-        is_balanced = balanced
+        is_balanced = balanced and supports_class_weighting(algorithm)
 
     # Step 3: Threshold calibration on validation split + refit on train+val (D8)
+    pre_refit_train_samples_count = len(split.X_train)
     optimal_threshold = 0.50
     if split.X_val is not None and split.y_val is not None:
         from final_project.evaluation import optimize_threshold
@@ -116,11 +123,14 @@ def run_training(
         X_train_val = pd.concat([split.X_train, split.X_val], ignore_index=True)
         y_train_val = pd.concat([split.y_train, split.y_val], ignore_index=True)
         final_model.fit(X_train_val, y_train_val)
+        val_samples_count = len(split.X_val)
         train_samples_count = len(X_train_val)
     else:
+        val_samples_count = 0
         train_samples_count = len(split.X_train)
 
     joblib.dump(final_model, model_file)
+    model_sha256 = compute_sha256(model_file)
 
     metadata = ModelMetadata(
         timestamp=timestamp,
@@ -135,11 +145,14 @@ def run_training(
         mlflow_experiment_id=tuning_res.experiment_id if tune else None,
         optimal_threshold=optimal_threshold,
         train_samples=train_samples_count,
+        pre_refit_train_samples=pre_refit_train_samples_count,
+        val_samples=val_samples_count,
         test_samples=len(split.X_test),
         feature_count=len(feature_names),
         features=feature_names,
         random_state=random_state,
         model_artifact=str(model_file.name),
+        model_sha256=model_sha256,
     )
 
     metadata_file = out_path / "metadata.json"
@@ -152,11 +165,13 @@ def run_training(
         cv_auc_mean=cv_auc_mean,
         cv_auc_std=cv_auc_std,
         cv_fold_scores=cv_fold_scores,
-        train_samples=len(split.X_train),
+        train_samples=train_samples_count,
         test_samples=len(split.X_test),
         feature_count=len(feature_names),
         features=feature_names,
         random_state=random_state,
         model_path=str(model_file),
         metadata_path=str(metadata_file),
+        pre_refit_train_samples=pre_refit_train_samples_count,
+        val_samples=val_samples_count,
     )

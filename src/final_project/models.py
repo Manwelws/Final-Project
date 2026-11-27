@@ -48,6 +48,12 @@ def compute_scale_pos_weight(y: pd.Series) -> float:
     return float(neg_count / pos_count)
 
 
+def supports_class_weighting(name: str) -> bool:
+    """Return whether the given candidate algorithm accepts class weighting."""
+    normalized_name = name.lower().replace("-", "_").replace(" ", "_")
+    return normalized_name not in ("knn", "kneighbors")
+
+
 def get_candidate_model(
     name: str,
     balanced: bool = False,
@@ -225,7 +231,7 @@ def get_candidate_model(
     else:
         raise ValueError(
             f"Unsupported algorithm '{name}'. Choose from 'random_forest', 'lightgbm', 'xgboost', "
-            f"'logistic_regression', 'bagged_logistic', 'mlp', 'voting_ensemble', 'stacking_ensemble'."
+            f"'logistic_regression', 'bagged_logistic', 'mlp', 'knn', 'voting_ensemble', 'stacking_ensemble'."
         )
 
 
@@ -340,6 +346,7 @@ def benchmark_candidates(
         "mlp": "MLP Neural Network (Scaled)",
         "neural_network": "MLP Neural Network (Scaled)",
         "knn": "K-Nearest Neighbors (Scaled)",
+        "kneighbors": "K-Nearest Neighbors (Scaled)",
         "voting_ensemble": "Soft Voting Ensemble (Tree + Linear)",
         "voting": "Soft Voting Ensemble (Tree + Linear)",
         "stacking_ensemble": "Stacking Ensemble (Tree + Linear -> LR)",
@@ -348,8 +355,10 @@ def benchmark_candidates(
 
     records = []
     for algo in algorithms:
-        d_name = display_names.get(algo.lower(), algo)
-        for balanced in [False, True]:
+        algo_norm = algo.lower().replace("-", "_").replace(" ", "_")
+        d_name = display_names.get(algo_norm, algo)
+        weighting_modes = [False, True] if supports_class_weighting(algo) else [False]
+        for balanced in weighting_modes:
             model = get_candidate_model(
                 algo,
                 balanced=balanced,

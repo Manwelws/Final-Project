@@ -93,3 +93,40 @@ def test_model_bundle_sha256_verification_and_tamper_detection(tmp_path):
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
         ModelBundle.load(tmp_path)
 
+
+def test_model_metadata_pre_refit_and_val_samples_backward_compatibility(tmp_path):
+    # Omitted optional counts default to None and are pruned from to_dict()
+    legacy_meta = ModelMetadata(algorithm="RandomForestClassifier", train_samples=100)
+    assert legacy_meta.pre_refit_train_samples is None
+    assert legacy_meta.val_samples is None
+    legacy_dict = legacy_meta.to_dict()
+    assert "pre_refit_train_samples" not in legacy_dict
+    assert "val_samples" not in legacy_dict
+
+    # Loading legacy dict without new keys succeeds with None defaults
+    loaded_legacy = ModelMetadata.from_dict({"algorithm": "RandomForestClassifier", "train_samples": 100})
+    assert loaded_legacy.pre_refit_train_samples is None
+    assert loaded_legacy.val_samples is None
+
+    # Explicit counts serialize and round-trip cleanly (including 0 val_samples)
+    explicit_meta = ModelMetadata(
+        algorithm="RandomForestClassifier",
+        train_samples=80,
+        pre_refit_train_samples=70,
+        val_samples=10,
+    )
+    meta_file = tmp_path / "metadata_counts.json"
+    explicit_meta.save(meta_file)
+    loaded_explicit = ModelMetadata.load(meta_file)
+    assert loaded_explicit.train_samples == 80
+    assert loaded_explicit.pre_refit_train_samples == 70
+    assert loaded_explicit.val_samples == 10
+
+    zero_val_meta = ModelMetadata(
+        algorithm="RandomForestClassifier",
+        train_samples=70,
+        pre_refit_train_samples=70,
+        val_samples=0,
+    )
+    assert zero_val_meta.to_dict()["val_samples"] == 0
+

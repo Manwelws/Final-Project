@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-11-01T20:57:46.619077+00:00",
+  "timestamp": "2026-11-27T08:00:34.519657+00:00",
   "algorithm": "RandomForestClassifier",
   "balanced": false,
-  "optimal_threshold": 0.36000000000000004,
-  "cost_savings": 10600.0,
-  "cost_at_optimal": 25500.0,
+  "optimal_threshold": 0.1,
+  "cost_savings": 21200.0,
+  "cost_at_optimal": 14900.0,
   "cost_at_default": 36100.0,
   "holdout_roc_auc": 0.8435725541863649,
   "holdout_pr_auc": 0.6442233618907703,
@@ -50,6 +50,8 @@
     0.8315340488135305
   ],
   "train_samples": 5634,
+  "pre_refit_train_samples": 4929,
+  "val_samples": 705,
   "test_samples": 1409,
   "feature_count": 27,
   "model_artifact": "model.joblib",
@@ -68,28 +70,28 @@
       "cost": 36100.0
     },
     "f1_optimal": {
-      "threshold": 0.36000000000000004,
-      "tp": 266,
-      "fp": 195,
-      "tn": 840,
-      "fn": 108,
-      "precision": 0.5770065075921909,
-      "recall": 0.7112299465240641,
-      "f1": 0.637125748502994,
-      "f2": 0.6796116504854369,
-      "cost": 25500.0
+      "threshold": 0.43,
+      "tp": 243,
+      "fp": 157,
+      "tn": 878,
+      "fn": 131,
+      "precision": 0.6075,
+      "recall": 0.6497326203208557,
+      "f1": 0.627906976744186,
+      "f2": 0.6408227848101266,
+      "cost": 29340.0
     },
     "cost_optimal": {
-      "threshold": 0.36000000000000004,
-      "tp": 266,
-      "fp": 195,
-      "tn": 840,
-      "fn": 108,
-      "precision": 0.5770065075921909,
-      "recall": 0.7112299465240641,
-      "f1": 0.637125748502994,
-      "f2": 0.6796116504854369,
-      "cost": 25500.0
+      "threshold": 0.1,
+      "tp": 352,
+      "fp": 525,
+      "tn": 510,
+      "fn": 22,
+      "precision": 0.4013683010262258,
+      "recall": 0.9411764705882353,
+      "f1": 0.5627498001598722,
+      "f2": 0.7416772018541931,
+      "cost": 14900.0
     }
   }
 }

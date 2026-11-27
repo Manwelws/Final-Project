@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.metrics import (
     roc_auc_score,
     average_precision_score,
@@ -14,7 +15,7 @@ import joblib
 
 logger = logging.getLogger(__name__)
 
-from final_project.data import load_and_split_data
+from final_project.data import DataSplit, load_and_split_data
 from final_project.domain.cost import CostMatrix
 from final_project.registry import ModelMetadata
 from final_project.reporting import render_evaluation_plots, generate_evaluation_report
@@ -81,6 +82,10 @@ class EvaluationReport:
     brier_score: float | None
     optimization: OptimizationResult
     cost_matrix: CostMatrix
+    algorithm: str = ""
+    balanced: bool | None = None
+    train_samples: int | None = None
+    val_samples: int | None = None
 
     @classmethod
     def compute(
@@ -93,6 +98,10 @@ class EvaluationReport:
         step: float = 0.01,
         optimal_threshold: float | None = None,
         f1_optimal_threshold: float | None = None,
+        algorithm: str = "",
+        balanced: bool | None = None,
+        train_samples: int | None = None,
+        val_samples: int | None = None,
     ) -> "EvaluationReport":
         """Pure in-process computation: derives all metrics and optimization without filesystem I/O."""
         if cost_matrix is None:
@@ -127,6 +136,10 @@ class EvaluationReport:
             brier_score=brier_score,
             optimization=optimization,
             cost_matrix=cost_matrix,
+            algorithm=algorithm,
+            balanced=balanced,
+            train_samples=train_samples,
+            val_samples=val_samples,
         )
 
     def render_plots(self, figures_dir: Path | str) -> list[str]:
@@ -235,7 +248,7 @@ def optimize_threshold(
     if cost_matrix is None:
         cost_matrix = CostMatrix(cost_fn=cost_fn, cost_fp=cost_fp)
 
-    thresholds = np.arange(0.01, 1.0, step)
+    thresholds = np.round(np.arange(0.01, 1.0, step), 4)
     all_metrics = [
         compute_metrics_at_threshold(y_true, y_probs, t, cost_matrix=cost_matrix)
         for t in thresholds
@@ -274,6 +287,70 @@ def optimize_threshold(
     )
 
 
+def _positive_class_probs(estimator: Any, X: pd.DataFrame | np.ndarray) -> np.ndarray:
+    """Extract positive-class probability vector, handling single-class estimators."""
+    probs = np.asarray(estimator.predict_proba(X))
+    if probs.ndim == 2 and probs.shape[1] >= 2:
+        return probs[:, 1]
+    if probs.ndim == 2 and probs.shape[1] == 1:
+        classes = getattr(estimator, "classes_", None)
+        if classes is not None and len(classes) == 1 and int(classes[0]) == 1:
+            return probs[:, 0]
+        return np.zeros(len(X), dtype=float)
+    return probs.ravel()
+
+
+def _calibrate_validation_thresholds(
+    model: Any,
+    split: DataSplit,
+    cost_matrix: CostMatrix,
+) -> tuple[float | None, float | None]:
+    """Calibrate cost-optimal and F1-optimal thresholds on validation split without leakage."""
+    if split.X_val is None or split.y_val is None:
+        return None, None
+
+    y_val_probs: np.ndarray | None = None
+    if len(np.unique(split.y_train)) >= 2:
+        try:
+            val_model = clone(model)
+            val_model.fit(split.X_train, split.y_train)
+            y_val_probs = _positive_class_probs(val_model, split.X_val)
+        except Exception as exc:
+            logger.warning(
+                "Failed to clone and fit model on train split for validation calibration; "
+                "falling back to loaded model: %s",
+                exc,
+            )
+    else:
+        logger.warning(
+            "Training split contains a single class; skipping clone refit and "
+            "falling back to loaded model for validation calibration."
+        )
+
+    if y_val_probs is None:
+        y_val_probs = _positive_class_probs(model, split.X_val)
+
+    val_opt = optimize_threshold(
+        y_true=split.y_val.to_numpy(),
+        y_probs=y_val_probs,
+        cost_matrix=cost_matrix,
+    )
+    return val_opt.cost_optimal_threshold, val_opt.f1_optimal_threshold
+
+
+def _load_metadata_dict(meta_path: Path) -> dict[str, Any]:
+    """Load metadata JSON into a dict, returning empty dict if missing or invalid."""
+    if not meta_path.exists():
+        return {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        return loaded if isinstance(loaded, dict) else {}
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        logger.warning("Failed to parse metadata from %s: %s", meta_path, exc)
+        return {}
+
+
 def run_evaluation(
     data_dir: Path | str = "data/processed",
     model_path: Path | str = "models/model.joblib",
@@ -303,29 +380,29 @@ def run_evaluation(
         random_state=random_state,
     )
 
-    # Step 2: Load trained model
+    # Step 2: Load trained model and existing metadata context
     m_path = Path(model_path)
     if not m_path.exists():
         raise FileNotFoundError(f"Model artifact not found at {m_path}")
     model = joblib.load(m_path)
 
+    meta_p = Path(metadata_path)
+    meta = _load_metadata_dict(meta_p)
+    algorithm = str(meta.get("algorithm") or model.__class__.__name__)
+    balanced = meta.get("balanced") if "balanced" in meta else None
+    train_samples = len(split.X_train)
+    val_samples = len(split.X_val) if split.X_val is not None else 0
+
     # Step 3: Select decision threshold on validation set (D8 / R1-3 leak-free)
-    if split.X_val is not None and split.y_val is not None:
-        y_val_probs = model.predict_proba(split.X_val)[:, 1]
-        val_opt = optimize_threshold(
-            y_true=split.y_val.to_numpy(),
-            y_probs=y_val_probs,
-            cost_matrix=cost_matrix,
-        )
-        optimal_threshold = val_opt.cost_optimal_threshold
-        f1_threshold = val_opt.f1_optimal_threshold
-    else:
-        optimal_threshold = None
-        f1_threshold = None
+    optimal_threshold, f1_threshold = _calibrate_validation_thresholds(
+        model=model,
+        split=split,
+        cost_matrix=cost_matrix,
+    )
 
     # Step 4: Evaluate holdout test set ONCE with validation-calibrated threshold
     y_test_arr = split.y_test.to_numpy()
-    y_probs = model.predict_proba(split.X_test)[:, 1]
+    y_probs = _positive_class_probs(model, split.X_test)
 
     report = EvaluationReport.compute(
         y_true=y_test_arr,
@@ -333,6 +410,10 @@ def run_evaluation(
         cost_matrix=cost_matrix,
         optimal_threshold=optimal_threshold,
         f1_optimal_threshold=f1_threshold,
+        algorithm=algorithm,
+        balanced=balanced,
+        train_samples=train_samples,
+        val_samples=val_samples,
     )
 
     # Step 5: Generate Figures & Markdown Report via report methods
@@ -345,17 +426,6 @@ def run_evaluation(
     report.write_markdown(report_file=report_file)
 
     # Step 6: Update models/metadata.json with optimal threshold details
-    meta_p = Path(metadata_path)
-    if meta_p.exists():
-        try:
-            with open(meta_p, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-        except (json.JSONDecodeError, OSError, ValueError) as exc:
-            logger.warning("Failed to parse metadata from %s: %s", meta_p, exc)
-            meta = {}
-    else:
-        meta = {}
-
     meta.update(report.to_metadata_dict())
 
     metadata = ModelMetadata.from_dict(meta)

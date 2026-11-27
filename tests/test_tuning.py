@@ -52,3 +52,42 @@ def test_run_tuning_study_fast_with_mlflow_logging(tmp_path):
     for run in runs:
         assert "algorithm" in run.data.params
         assert "cv_roc_auc" in run.data.metrics
+
+
+def test_run_tuning_study_knn(tmp_path):
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.pipeline import Pipeline
+
+    X_mat, y_vec = make_classification(
+        n_samples=80,
+        n_features=6,
+        n_informative=3,
+        weights=[0.75, 0.25],
+        random_state=42,
+    )
+    feature_cols = [f"f_{i}" for i in range(6)]
+    X = pd.DataFrame(X_mat, columns=feature_cols)
+    y = pd.Series(y_vec, name="target")
+
+    tracking_uri = f"file://{tmp_path / 'mlruns'}"
+    result = run_tuning_study(
+        X_train=X,
+        y_train=y,
+        n_trials=2,
+        cv_folds=2,
+        experiment_name="test_optuna_knn_experiment",
+        tracking_uri=tracking_uri,
+        random_state=42,
+        algorithms=["knn"],
+    )
+
+    assert isinstance(result, TuningResult)
+    assert result.best_algorithm == "knn"
+    assert result.best_params.get("balanced", False) is False
+    assert "n_neighbors" in result.best_params
+    assert "weights" in result.best_params
+    assert "p" in result.best_params
+    assert isinstance(result.best_model, Pipeline)
+    assert isinstance(result.best_model.named_steps["classifier"], KNeighborsClassifier)
+    preds = result.best_model.predict_proba(X)
+    assert preds.shape == (80, 2)

@@ -176,10 +176,55 @@ def generate_evaluation_report(
             "roc_auc": report.roc_auc,
             "pr_auc": report.pr_auc,
             "brier_score": report.brier_score,
+            "algorithm": getattr(report, "algorithm", ""),
+            "balanced": getattr(report, "balanced", None),
+            "train_samples": getattr(report, "train_samples", None),
+            "val_samples": getattr(report, "val_samples", None),
         }
 
     if report_file is None:
         raise ValueError("report_file must be specified")
+
+    algorithm = summary_data.get("algorithm") or ""
+    algorithm_display = f"`{algorithm}`" if algorithm else "Not specified"
+    balanced = summary_data.get("balanced")
+    if balanced is True:
+        imbalance_strategy = "`balanced`"
+    elif balanced is False:
+        imbalance_strategy = "`unweighted`"
+    else:
+        imbalance_strategy = "Not specified"
+
+    test_samples = summary_data["test_samples"]
+    train_samples = summary_data.get("train_samples")
+    val_samples = summary_data.get("val_samples")
+    test_split_label = "20% stratified split"
+    split_counts_line = ""
+    if train_samples is not None and val_samples is not None:
+        total_samples = train_samples + val_samples + test_samples
+        if total_samples > 0:
+            train_pct = (train_samples / total_samples) * 100
+            test_pct = (test_samples / total_samples) * 100
+            test_split_label = f"{test_pct:.0f}% stratified split"
+            if val_samples > 0:
+                val_pct = (val_samples / total_samples) * 100
+                split_counts_line = (
+                    f"\n- **Train / Validation Split Sizes**: {train_samples:,} train ({train_pct:.0f}%) / "
+                    f"{val_samples:,} validation ({val_pct:.0f}%)"
+                )
+            else:
+                split_counts_line = (
+                    f"\n- **Train Split Size**: {train_samples:,} train ({train_pct:.0f}%)"
+                )
+        else:
+            split_counts_line = f"\n- **Train Split Size**: {train_samples:,} train"
+    elif train_samples is not None:
+        split_counts_line = f"\n- **Train Split Size**: {train_samples:,} train"
+    elif val_samples is not None and val_samples > 0:
+        split_counts_line = f"\n- **Validation Split Size**: {val_samples:,} validation"
+
+    def _fmt_score(val: float | None) -> str:
+        return f"{val:.4f}" if val is not None else "N/A"
 
     def_m = opt_result.default_metrics
     f1_m = opt_result.f1_optimal_metrics
@@ -196,15 +241,24 @@ def generate_evaluation_report(
     content = f"""# Production Churn Model: Holdout Evaluation Report
 
 ## 1. Executive Summary
-- **Holdout Test Set Size**: {summary_data['test_samples']:,} customers (20% stratified split)
-- **Holdout ROC-AUC**: `{summary_data['roc_auc']:.4f}`
-- **Holdout PR-AUC**: `{summary_data['pr_auc']:.4f}`
-- **Brier Calibration Score**: `{summary_data['brier_score']:.4f}` (lower is better, <0.15 indicates strong calibration)
+- **Evaluated Model Algorithm**: {algorithm_display}
+- **Imbalance Strategy**: {imbalance_strategy}
+- **Holdout Test Set Size**: {test_samples:,} customers ({test_split_label}){split_counts_line}
+- **Holdout ROC-AUC**: `{_fmt_score(summary_data.get('roc_auc'))}`
+- **Holdout PR-AUC**: `{_fmt_score(summary_data.get('pr_auc'))}`
+- **Brier Calibration Score**: `{_fmt_score(summary_data.get('brier_score'))}` (lower is better, <0.15 indicates strong calibration)
 - **Business Cost Savings at Optimal Cutoff**: **${opt_result.cost_savings:,.2f} ({savings_pct:.1f}% reduction in expected financial loss)**
 
 ---
 
-## 2. Decision Threshold Comparison & Cost-Utility Threshold Optimization
+## 2. Evaluation & Calibration Methodology
+- **Data Partitioning (70/10/20 Stratified Split)**: Dataset is partitioned using a 70/10/20 stratified split into training (70%), validation (10%), and holdout test (20%) sets to preserve class balance across all evaluations.
+- **Validation-Split Threshold Calibration**: Operating thresholds (max-F1 and cost-optimal cutoffs) are calibrated leak-free on the 10% validation split using a model trained exclusively on the 70% training split, never on post-refit in-sample predictions or the holdout test set.
+- **Train+Val Refit & Final Scoring**: The final production model is refitted on the combined train+val data (80%) and evaluated once against the untouched 20% holdout test split using the validation-calibrated decision threshold.
+
+---
+
+## 3. Decision Threshold Comparison & Cost-Utility Threshold Optimization
 
 Business Loss Formula: $\\text{{Loss}} = C_{{\\text{{FN}}}} \\times \\text{{FN}} + C_{{\\text{{FP}}}} \\times \\text{{FP}}$  
 Assumed Matrix: $C_{{\\text{{FN}}}} = \\${cost_matrix.cost_fn:,.0f}$ (missed churner customer lifetime loss) vs. $C_{{\\text{{FP}}}} = \\${cost_matrix.cost_fp:,.0f}$ (cost of customer retention outreach).
@@ -217,19 +271,25 @@ Assumed Matrix: $C_{{\\text{{FN}}}} = \\${cost_matrix.cost_fn:,.0f}$ (missed chu
 
 ---
 
-## 3. Key Observations & Operational Recommendations
+## 4. Key Observations & Operational Recommendations
 1. **Financial Leverage**: Shifting the decision cutoff from `0.50` down to **`{cost_m.threshold:.2f}`** captures **{def_m.fn - cost_m.fn} additional at-risk churners**, reducing missed churn loss from ${def_m.fn * cost_matrix.cost_fn:,.0f} to ${cost_m.fn * cost_matrix.cost_fn:,.0f}.
 2. **Acceptable Outreach Volume**: While false alarms increase by {cost_m.fp - def_m.fp:,} customers, each outreach costs only ${cost_matrix.cost_fp:,.0f}, yielding a net business savings of **${opt_result.cost_savings:,.2f}**.
 3. **Serving Recommendation**: Production scoring should apply the decision threshold `threshold={cost_m.threshold:.2f}` when routing customers to the retention team.
 
 ---
 
-## 4. Diagnostic Visualizations
+## 5. Diagnostic Visualizations
 - **ROC Curve**: `figures/roc_curve.png`
 - **Precision-Recall Curve**: `figures/pr_curve.png`
 - **Calibration Diagram**: `figures/calibration_curve.png`
 - **Cost Curve**: `figures/cost_curve.png`
 - **Confusion Matrices**: `figures/confusion_matrix.png`
+- **SHAP Grouped Importance Summary**: `figures/shap_summary_grouped.png`
+- **SHAP Detailed Beeswarm Summary**: `figures/shap_summary_detailed.png`
+- **SHAP Dependence (Monthly Charges)**: `figures/shap_dependence_monthly_charges.png`
+- **SHAP Dependence (Tenure Months)**: `figures/shap_dependence_tenure.png`
+- **SHAP Local Waterfall (Churned Customer)**: `figures/shap_waterfall_churner.png`
+- **SHAP Local Waterfall (Retained / False Positive Customer)**: `figures/shap_waterfall_retained.png`
 """
     out_file = Path(report_file)
     out_file.parent.mkdir(parents=True, exist_ok=True)
