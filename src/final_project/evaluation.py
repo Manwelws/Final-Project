@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field, asdict
 import json
 import logging
 from pathlib import Path
@@ -18,7 +18,11 @@ logger = logging.getLogger(__name__)
 from final_project.data import DataSplit, load_and_split_data
 from final_project.domain.cost import CostMatrix
 from final_project.registry import ModelMetadata
-from final_project.reporting import render_evaluation_plots, generate_evaluation_report
+from final_project.reporting import (
+    EvaluationContext,
+    render_evaluation_plots,
+    generate_evaluation_report,
+)
 
 # Backward compatibility aliases for internal/external references
 _generate_plots = render_evaluation_plots
@@ -82,10 +86,23 @@ class EvaluationReport:
     brier_score: float | None
     optimization: OptimizationResult
     cost_matrix: CostMatrix
-    algorithm: str = ""
-    balanced: bool | None = None
-    train_samples: int | None = None
-    val_samples: int | None = None
+    context: EvaluationContext = field(default_factory=EvaluationContext)
+
+    @property
+    def algorithm(self) -> str:
+        return self.context.algorithm
+
+    @property
+    def balanced(self) -> bool | None:
+        return self.context.balanced
+
+    @property
+    def train_samples(self) -> int | None:
+        return self.context.train_samples
+
+    @property
+    def val_samples(self) -> int | None:
+        return self.context.val_samples
 
     @classmethod
     def compute(
@@ -98,6 +115,7 @@ class EvaluationReport:
         step: float = 0.01,
         optimal_threshold: float | None = None,
         f1_optimal_threshold: float | None = None,
+        context: EvaluationContext | None = None,
         algorithm: str = "",
         balanced: bool | None = None,
         train_samples: int | None = None,
@@ -106,6 +124,17 @@ class EvaluationReport:
         """Pure in-process computation: derives all metrics and optimization without filesystem I/O."""
         if cost_matrix is None:
             cost_matrix = CostMatrix(cost_fn=cost_fn, cost_fp=cost_fp)
+
+        resolved_context = (
+            context
+            if context is not None
+            else EvaluationContext(
+                algorithm=algorithm,
+                balanced=balanced,
+                train_samples=train_samples,
+                val_samples=val_samples,
+            )
+        )
 
         y_true_arr = np.asarray(y_true).ravel()
         y_probs_arr = np.asarray(y_probs).ravel()
@@ -136,10 +165,7 @@ class EvaluationReport:
             brier_score=brier_score,
             optimization=optimization,
             cost_matrix=cost_matrix,
-            algorithm=algorithm,
-            balanced=balanced,
-            train_samples=train_samples,
-            val_samples=val_samples,
+            context=resolved_context,
         )
 
     def render_plots(self, figures_dir: Path | str) -> list[str]:
@@ -338,19 +364,6 @@ def _calibrate_validation_thresholds(
     return val_opt.cost_optimal_threshold, val_opt.f1_optimal_threshold
 
 
-def _load_metadata_dict(meta_path: Path) -> dict[str, Any]:
-    """Load metadata JSON into a dict, returning empty dict if missing or invalid."""
-    if not meta_path.exists():
-        return {}
-    try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            loaded = json.load(f)
-        return loaded if isinstance(loaded, dict) else {}
-    except (json.JSONDecodeError, OSError, ValueError) as exc:
-        logger.warning("Failed to parse metadata from %s: %s", meta_path, exc)
-        return {}
-
-
 def run_evaluation(
     data_dir: Path | str = "data/processed",
     model_path: Path | str = "models/model.joblib",
@@ -387,11 +400,26 @@ def run_evaluation(
     model = joblib.load(m_path)
 
     meta_p = Path(metadata_path)
-    meta = _load_metadata_dict(meta_p)
-    algorithm = str(meta.get("algorithm") or model.__class__.__name__)
-    balanced = meta.get("balanced") if "balanced" in meta else None
-    train_samples = len(split.X_train)
-    val_samples = len(split.X_val) if split.X_val is not None else 0
+    existing_meta: ModelMetadata | None = None
+    if meta_p.exists():
+        try:
+            existing_meta = ModelMetadata.load(meta_p)
+        except (json.JSONDecodeError, OSError, KeyError, TypeError, ValueError) as exc:
+            logger.warning("Failed to load model metadata from %s: %s", meta_p, exc)
+            existing_meta = None
+
+    algorithm = (
+        existing_meta.algorithm
+        if existing_meta is not None and existing_meta.algorithm
+        else model.__class__.__name__
+    )
+    balanced = existing_meta.balanced if existing_meta is not None else None
+    eval_context = EvaluationContext(
+        algorithm=algorithm,
+        balanced=balanced,
+        train_samples=len(split.X_train),
+        val_samples=len(split.X_val) if split.X_val is not None else 0,
+    )
 
     # Step 3: Select decision threshold on validation set (D8 / R1-3 leak-free)
     optimal_threshold, f1_threshold = _calibrate_validation_thresholds(
@@ -410,10 +438,7 @@ def run_evaluation(
         cost_matrix=cost_matrix,
         optimal_threshold=optimal_threshold,
         f1_optimal_threshold=f1_threshold,
-        algorithm=algorithm,
-        balanced=balanced,
-        train_samples=train_samples,
-        val_samples=val_samples,
+        context=eval_context,
     )
 
     # Step 5: Generate Figures & Markdown Report via report methods
@@ -426,9 +451,12 @@ def run_evaluation(
     report.write_markdown(report_file=report_file)
 
     # Step 6: Update models/metadata.json with optimal threshold details
-    meta.update(report.to_metadata_dict())
-
-    metadata = ModelMetadata.from_dict(meta)
+    merged_meta = (
+        {**existing_meta.to_dict(), **report.to_metadata_dict()}
+        if existing_meta is not None
+        else report.to_metadata_dict()
+    )
+    metadata = ModelMetadata.from_dict(merged_meta)
     metadata.save(meta_p)
 
     return report.to_summary(report_path=str(report_file), figures=plot_files)

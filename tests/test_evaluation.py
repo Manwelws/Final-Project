@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.datasets import make_classification
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 import joblib
@@ -52,28 +51,27 @@ def test_optimize_threshold_shifts_lower_under_high_fn_cost():
     assert opt.cost_at_optimal < opt.cost_at_default
 
 
-def test_run_evaluation_mock_creates_report_and_plots(tmp_path):
+def test_run_evaluation_mock_creates_report_and_plots(tmp_path, classification_data_factory):
     data_dir = tmp_path / "data"
     models_dir = tmp_path / "models"
     reports_dir = tmp_path / "reports"
-    data_dir.mkdir()
     models_dir.mkdir()
 
     # Generate synthetic features and target
-    X_mat, y_vec = make_classification(
+    X_df, y_vec = classification_data_factory(
+        data_dir,
         n_samples=100,
         n_features=5,
         n_informative=3,
         weights=[0.75, 0.25],
         random_state=42,
+        col_prefix="f_",
     )
-    feature_cols = [f"f_{i}" for i in range(5)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
+    feature_cols = list(X_df.columns)
 
     # Train and save a quick model
     clf = RandomForestClassifier(random_state=42)
-    clf.fit(X_mat, y_vec)
+    clf.fit(X_df, y_vec)
     joblib.dump(clf, models_dir / "model.joblib")
     initial_meta = {
         "algorithm": "RandomForestClassifier",
@@ -177,7 +175,7 @@ def test_evaluation_report_single_class_guard():
     assert report.optimization.cost_optimal_threshold > 0.0
 
 
-def test_optimize_threshold_and_metadata_rounded_to_4_decimals(tmp_path):
+def test_optimize_threshold_and_metadata_rounded_to_4_decimals(tmp_path, classification_data_factory):
     # Probabilities chosen so threshold 0.36 (index 35 of np.arange(0.01, 1.0, 0.01))
     # is the minimum-cost threshold (0.36000000000000004 without rounding)
     y_true = np.array([0, 0, 1, 1])
@@ -194,23 +192,21 @@ def test_optimize_threshold_and_metadata_rounded_to_4_decimals(tmp_path):
     data_dir = tmp_path / "data"
     models_dir = tmp_path / "models"
     reports_dir = tmp_path / "reports"
-    data_dir.mkdir()
     models_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    X_df, y_vec = classification_data_factory(
+        data_dir,
         n_samples=100,
         n_features=4,
         n_informative=3,
         n_redundant=0,
         weights=[0.75, 0.25],
         random_state=42,
+        col_prefix="f_",
     )
-    cols = [f"f_{i}" for i in range(4)]
-    pd.DataFrame(X_mat, columns=cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     clf = LogisticRegression(random_state=42)
-    clf.fit(X_mat, y_vec)
+    clf.fit(X_df, y_vec)
     joblib.dump(clf, models_dir / "model.joblib")
 
     run_evaluation(
@@ -374,26 +370,26 @@ def test_run_evaluation_fallback_on_non_clonable_or_unfittable_estimator(tmp_pat
     assert 0.0 < summary.optimal_threshold < 1.0
 
 
-def test_run_evaluation_fallback_when_y_train_is_single_class(tmp_path, monkeypatch):
+def test_run_evaluation_fallback_when_y_train_is_single_class(
+    tmp_path, monkeypatch, classification_data_factory
+):
     import final_project.evaluation as eval_mod
     from final_project.data import DataSplit
 
     data_dir = tmp_path / "data"
     models_dir = tmp_path / "models"
     reports_dir = tmp_path / "reports"
-    data_dir.mkdir()
     models_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    X_df, y_vec = classification_data_factory(
+        data_dir,
         n_samples=60,
         n_features=4,
         n_informative=3,
         n_redundant=0,
         random_state=42,
+        col_prefix="f_",
     )
-    X_df = pd.DataFrame(X_mat, columns=[f"f_{i}" for i in range(4)])
-    X_df.to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     clf = LogisticRegression(random_state=42)
     clf.fit(X_df, y_vec)
@@ -421,22 +417,20 @@ def test_run_evaluation_fallback_when_y_train_is_single_class(tmp_path, monkeypa
     assert 0.0 < summary.optimal_threshold < 1.0
 
 
-def test_run_evaluation_respects_cost_fn_and_cost_fp(tmp_path):
+def test_run_evaluation_respects_cost_fn_and_cost_fp(tmp_path, classification_data_factory):
     data_dir = tmp_path / "data"
     models_dir = tmp_path / "models"
-    data_dir.mkdir()
     models_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    X_df, y_vec = classification_data_factory(
+        data_dir,
         n_samples=120,
         n_features=5,
         n_informative=3,
         weights=[0.7, 0.3],
         random_state=42,
+        col_prefix="f_",
     )
-    X_df = pd.DataFrame(X_mat, columns=[f"f_{i}" for i in range(5)])
-    X_df.to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     clf = LogisticRegression(random_state=42)
     clf.fit(X_df, y_vec)
@@ -487,27 +481,27 @@ def test_evaluation_report_context_fields_and_defaults():
     assert ctx_report.val_samples == 100
 
 
-def test_run_evaluation_passes_metadata_context_to_report_and_preserves_metadata(tmp_path, monkeypatch):
+def test_run_evaluation_passes_metadata_context_to_report_and_preserves_metadata(
+    tmp_path, monkeypatch, classification_data_factory
+):
     import final_project.evaluation as eval_mod
 
     data_dir = tmp_path / "data"
     models_dir = tmp_path / "models"
     reports_dir = tmp_path / "reports"
-    data_dir.mkdir()
     models_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    X_df, y_vec = classification_data_factory(
+        data_dir,
         n_samples=100,
         n_features=4,
         n_informative=3,
         n_redundant=0,
         weights=[0.7, 0.3],
         random_state=42,
+        col_prefix="f_",
     )
-    feature_cols = [f"f_{i}" for i in range(4)]
-    X_df = pd.DataFrame(X_mat, columns=feature_cols)
-    X_df.to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
+    feature_cols = list(X_df.columns)
 
     clf = LogisticRegression(random_state=42)
     clf.fit(X_df, y_vec)
@@ -560,25 +554,25 @@ def test_run_evaluation_passes_metadata_context_to_report_and_preserves_metadata
     assert "optimal_threshold" in updated_meta
 
 
-def test_run_evaluation_context_defaults_without_metadata_or_val_split(tmp_path, monkeypatch):
+def test_run_evaluation_context_defaults_without_metadata_or_val_split(
+    tmp_path, monkeypatch, classification_data_factory
+):
     import final_project.evaluation as eval_mod
 
     data_dir = tmp_path / "data"
     models_dir = tmp_path / "models"
     reports_dir = tmp_path / "reports"
-    data_dir.mkdir()
     models_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    X_df, y_vec = classification_data_factory(
+        data_dir,
         n_samples=100,
         n_features=4,
         n_informative=3,
         n_redundant=0,
         random_state=42,
+        col_prefix="f_",
     )
-    X_df = pd.DataFrame(X_mat, columns=[f"f_{i}" for i in range(4)])
-    X_df.to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     clf = LogisticRegression(random_state=42)
     clf.fit(X_df, y_vec)

@@ -18,6 +18,7 @@ os.environ["MLFLOW_DISABLE_AGENT_HINT"] = "1"
 from final_project.models import (
     get_candidate_model,
     compute_scale_pos_weight,
+    normalize_algorithm_name,
     supports_class_weighting,
 )
 
@@ -41,14 +42,15 @@ def _build_model_from_trial(
     """Sample hyperparameters for a candidate architecture from Optuna trial."""
     candidate_algos = algorithms or ["random_forest", "lightgbm", "xgboost"]
     algorithm = trial.suggest_categorical("algorithm", candidate_algos)
-    if supports_class_weighting(algorithm):
+    canonical_algorithm = normalize_algorithm_name(algorithm)
+    if supports_class_weighting(canonical_algorithm):
         balanced = trial.suggest_categorical("balanced", [True, False])
     else:
         balanced = False
 
     params: dict[str, Any] = {"algorithm": algorithm, "balanced": balanced}
 
-    if algorithm == "random_forest":
+    if canonical_algorithm == "random_forest":
         n_estimators = trial.suggest_int("rf_n_estimators", 50, 300, step=50)
         max_depth = trial.suggest_int("rf_max_depth", 4, 20)
         min_samples_split = trial.suggest_int("rf_min_samples_split", 2, 10)
@@ -60,7 +62,7 @@ def _build_model_from_trial(
             "min_samples_leaf": min_samples_leaf,
         })
         model = get_candidate_model(
-            "random_forest",
+            canonical_algorithm,
             balanced=balanced,
             random_state=random_state,
             n_estimators=n_estimators,
@@ -69,7 +71,7 @@ def _build_model_from_trial(
             min_samples_leaf=min_samples_leaf,
         )
 
-    elif algorithm == "lightgbm":
+    elif canonical_algorithm == "lightgbm":
         n_estimators = trial.suggest_int("lgb_n_estimators", 50, 300, step=50)
         learning_rate = trial.suggest_float("lgb_learning_rate", 0.01, 0.2, log=True)
         num_leaves = trial.suggest_int("lgb_num_leaves", 15, 63)
@@ -85,7 +87,7 @@ def _build_model_from_trial(
             "reg_lambda": reg_lambda,
         })
         model = get_candidate_model(
-            "lightgbm",
+            canonical_algorithm,
             balanced=balanced,
             random_state=random_state,
             n_estimators=n_estimators,
@@ -96,7 +98,7 @@ def _build_model_from_trial(
             reg_lambda=reg_lambda,
         )
 
-    elif algorithm == "xgboost":
+    elif canonical_algorithm == "xgboost":
         n_estimators = trial.suggest_int("xgb_n_estimators", 50, 300, step=50)
         learning_rate = trial.suggest_float("xgb_learning_rate", 0.01, 0.2, log=True)
         max_depth = trial.suggest_int("xgb_max_depth", 3, 10)
@@ -114,7 +116,7 @@ def _build_model_from_trial(
             "reg_lambda": reg_lambda,
         })
         model = get_candidate_model(
-            "xgboost",
+            canonical_algorithm,
             balanced=balanced,
             scale_pos_weight=scale_pos_weight if balanced else None,
             random_state=random_state,
@@ -127,37 +129,37 @@ def _build_model_from_trial(
             reg_lambda=reg_lambda,
         )
 
-    elif algorithm in ("logistic_regression", "lr", "logistic"):
+    elif canonical_algorithm == "logistic_regression":
         c_val = trial.suggest_float("lr_c", 1e-3, 10.0, log=True)
         params.update({"C": c_val})
         model = get_candidate_model(
-            "logistic_regression",
+            canonical_algorithm,
             balanced=balanced,
             random_state=random_state,
             C=c_val,
         )
 
-    elif algorithm in ("bagged_logistic", "bagged_lr"):
+    elif canonical_algorithm == "bagged_logistic":
         n_estimators = trial.suggest_int("bagged_n_estimators", 15, 60, step=15)
         params.update({"n_estimators": n_estimators})
         model = get_candidate_model(
-            "bagged_logistic",
+            canonical_algorithm,
             balanced=balanced,
             random_state=random_state,
             n_estimators=n_estimators,
         )
 
-    elif algorithm in ("mlp", "neural_network", "mlp_classifier"):
+    elif canonical_algorithm == "mlp":
         alpha = trial.suggest_float("mlp_alpha", 1e-4, 1e-1, log=True)
         params.update({"alpha": alpha})
         model = get_candidate_model(
-            "mlp",
+            canonical_algorithm,
             balanced=balanced,
             random_state=random_state,
             alpha=alpha,
         )
 
-    elif algorithm in ("knn", "kneighbors"):
+    elif canonical_algorithm == "knn":
         n_neighbors = trial.suggest_int("knn_n_neighbors", 3, 25, step=2)
         weights = trial.suggest_categorical("knn_weights", ["uniform", "distance"])
         p = trial.suggest_int("knn_p", 1, 2)
@@ -167,7 +169,7 @@ def _build_model_from_trial(
             "p": p,
         })
         model = get_candidate_model(
-            "knn",
+            canonical_algorithm,
             balanced=False,
             random_state=random_state,
             n_neighbors=n_neighbors,
@@ -175,18 +177,18 @@ def _build_model_from_trial(
             p=p,
         )
 
-    elif algorithm in ("voting_ensemble", "voting"):
+    elif canonical_algorithm == "voting_ensemble":
         params.update({"voting": "soft"})
         model = get_candidate_model(
-            "voting_ensemble",
+            canonical_algorithm,
             balanced=balanced,
             random_state=random_state,
         )
 
-    elif algorithm in ("stacking_ensemble", "stacking"):
+    elif canonical_algorithm == "stacking_ensemble":
         params.update({"meta_classifier": "LogisticRegression"})
         model = get_candidate_model(
-            "stacking_ensemble",
+            canonical_algorithm,
             balanced=balanced,
             random_state=random_state,
         )

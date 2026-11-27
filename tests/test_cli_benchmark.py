@@ -1,23 +1,19 @@
 import pytest
-import pandas as pd
-from sklearn.datasets import make_classification
 from final_project.cli import main
 
 
-def test_cli_benchmark_command(tmp_path, capsys):
+def test_cli_benchmark_command(tmp_path, capsys, classification_data_factory):
     data_dir = tmp_path / "data"
-    data_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    classification_data_factory(
+        data_dir,
         n_samples=60,
         n_features=4,
         n_informative=2,
         weights=[0.75, 0.25],
         random_state=42,
+        col_prefix="feat_",
     )
-    feature_cols = [f"feat_{i}" for i in range(4)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     exit_code = main([
         "benchmark",
@@ -35,21 +31,19 @@ def test_cli_benchmark_command(tmp_path, capsys):
     assert "Balanced" in captured.out
 
 
-def test_cli_train_with_algorithm_and_balanced(tmp_path, capsys):
+def test_cli_train_with_algorithm_and_balanced(tmp_path, capsys, classification_data_factory):
     data_dir = tmp_path / "data"
     output_dir = tmp_path / "models"
-    data_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    classification_data_factory(
+        data_dir,
         n_samples=40,
         n_features=4,
         n_informative=2,
         weights=[0.7, 0.3],
         random_state=42,
+        col_prefix="f_",
     )
-    feature_cols = [f"f_{i}" for i in range(4)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     exit_code = main([
         "train",
@@ -67,21 +61,19 @@ def test_cli_train_with_algorithm_and_balanced(tmp_path, capsys):
     assert (output_dir / "metadata.json").exists()
 
 
-def test_cli_train_with_tune(tmp_path, capsys):
+def test_cli_train_with_tune(tmp_path, capsys, classification_data_factory):
     data_dir = tmp_path / "data"
     output_dir = tmp_path / "models"
-    data_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    classification_data_factory(
+        data_dir,
         n_samples=40,
         n_features=4,
         n_informative=2,
         weights=[0.7, 0.3],
         random_state=42,
+        col_prefix="f_",
     )
-    feature_cols = [f"f_{i}" for i in range(4)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     exit_code = main([
         "train",
@@ -102,30 +94,29 @@ def test_cli_train_with_tune(tmp_path, capsys):
     assert (output_dir / "metadata.json").exists()
 
 
-def test_cli_evaluate_command(tmp_path, capsys):
+def test_cli_evaluate_command(tmp_path, capsys, classification_data_factory):
     data_dir = tmp_path / "data"
     output_dir = tmp_path / "models"
     reports_dir = tmp_path / "reports"
-    data_dir.mkdir()
     output_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    X_df, y_vec = classification_data_factory(
+        data_dir,
         n_samples=50,
         n_features=4,
         n_informative=2,
         weights=[0.7, 0.3],
         random_state=42,
+        col_prefix="f_",
     )
-    feature_cols = [f"f_{i}" for i in range(4)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
+    feature_cols = list(X_df.columns)
 
     # Train a baseline model
     from sklearn.ensemble import RandomForestClassifier
     import joblib
     import json
     clf = RandomForestClassifier(random_state=42)
-    clf.fit(X_mat, y_vec)
+    clf.fit(X_df, y_vec)
     joblib.dump(clf, output_dir / "model.joblib")
     with open(output_dir / "metadata.json", "w") as f:
         json.dump({"algorithm": "RandomForestClassifier", "features": feature_cols}, f)
@@ -147,25 +138,23 @@ def test_cli_evaluate_command(tmp_path, capsys):
     assert (reports_dir / "evaluation_report.md").exists()
 
 
-def test_cli_train_with_knn(tmp_path, capsys):
+def test_cli_train_with_knn(tmp_path, capsys, classification_data_factory):
     import joblib
     from sklearn.neighbors import KNeighborsClassifier
     from sklearn.pipeline import Pipeline
 
     data_dir = tmp_path / "data"
     output_dir = tmp_path / "models"
-    data_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    classification_data_factory(
+        data_dir,
         n_samples=80,
         n_features=4,
         n_informative=2,
         weights=[0.7, 0.3],
         random_state=42,
+        col_prefix="f_",
     )
-    feature_cols = [f"f_{i}" for i in range(4)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     exit_code = main([
         "train",
@@ -185,20 +174,18 @@ def test_cli_train_with_knn(tmp_path, capsys):
     assert isinstance(model.named_steps["classifier"], KNeighborsClassifier)
 
 
-def test_cli_benchmark_all_includes_knn(tmp_path, capsys):
+def test_cli_benchmark_all_includes_knn(tmp_path, capsys, classification_data_factory):
     data_dir = tmp_path / "data"
-    data_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    classification_data_factory(
+        data_dir,
         n_samples=100,
         n_features=4,
         n_informative=2,
         weights=[0.75, 0.25],
         random_state=42,
+        col_prefix="feat_",
     )
-    feature_cols = [f"feat_{i}" for i in range(4)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     exit_code = main([
         "benchmark",

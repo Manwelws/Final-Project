@@ -6,7 +6,7 @@ import pytest
 
 from final_project.domain.cost import CostMatrix
 from final_project.evaluation import optimize_threshold
-from final_project.reporting import generate_evaluation_report
+from final_project.reporting import EvaluationContext, generate_evaluation_report
 
 
 def _make_opt_result():
@@ -96,7 +96,7 @@ def test_report_documents_split_calibration_and_refit_methodology(tmp_path):
     assert "8" in text
 
 
-def test_report_references_shap_and_evaluation_figures(tmp_path):
+def test_report_references_evaluation_figures_and_notes_missing_shap(tmp_path):
     y_true, y_probs, opt = _make_opt_result()
     report_obj = SimpleNamespace(
         y_true=y_true,
@@ -110,12 +110,17 @@ def test_report_references_shap_and_evaluation_figures(tmp_path):
     generate_evaluation_report(report=report_obj, report_file=out)
     text = out.read_text(encoding="utf-8")
 
-    expected_figures = [
+    expected_eval_figures = [
         "figures/roc_curve.png",
         "figures/pr_curve.png",
         "figures/calibration_curve.png",
         "figures/cost_curve.png",
         "figures/confusion_matrix.png",
+    ]
+    for fig_ref in expected_eval_figures:
+        assert fig_ref in text
+
+    shap_figures = [
         "figures/shap_summary_grouped.png",
         "figures/shap_summary_detailed.png",
         "figures/shap_dependence_monthly_charges.png",
@@ -123,8 +128,70 @@ def test_report_references_shap_and_evaluation_figures(tmp_path):
         "figures/shap_waterfall_churner.png",
         "figures/shap_waterfall_retained.png",
     ]
-    for fig_ref in expected_figures:
-        assert fig_ref in text
+    for shap_ref in shap_figures:
+        assert shap_ref not in text
+
+    assert "churn explain" in text
+    assert "figures/" in text
+
+
+def test_report_references_existing_shap_figures_only(tmp_path):
+    y_true, y_probs, opt = _make_opt_result()
+    report_obj = SimpleNamespace(
+        y_true=y_true,
+        y_probs=y_probs,
+        roc_auc=0.95,
+        pr_auc=0.92,
+        brier_score=0.08,
+        optimization=opt,
+    )
+    figures_dir = tmp_path / "figures"
+    figures_dir.mkdir()
+    present_shap = [
+        "shap_summary_grouped.png",
+        "shap_summary_detailed.png",
+        "shap_waterfall_churner.png",
+    ]
+    for name in present_shap:
+        (figures_dir / name).write_bytes(b"png")
+
+    out = tmp_path / "evaluation_report.md"
+    generate_evaluation_report(report=report_obj, report_file=out)
+    text = out.read_text(encoding="utf-8")
+
+    for name in present_shap:
+        assert f"figures/{name}" in text
+
+    absent_shap = [
+        "shap_dependence_monthly_charges.png",
+        "shap_dependence_tenure.png",
+        "shap_waterfall_retained.png",
+    ]
+    for name in absent_shap:
+        assert f"figures/{name}" not in text
+    assert "churn explain" not in text
+
+
+def test_report_accepts_evaluation_context_object(tmp_path):
+    from final_project.evaluation import EvaluationContext as EvalCtx, EvaluationReport
+
+    assert EvalCtx is EvaluationContext
+    y_true, y_probs, _ = _make_opt_result()
+    ctx = EvaluationContext(
+        algorithm="CatBoost",
+        balanced=True,
+        train_samples=70,
+        val_samples=10,
+    )
+    report = EvaluationReport.compute(y_true=y_true, y_probs=y_probs, context=ctx)
+    out = tmp_path / "context_report.md"
+    report.write_markdown(out)
+    text = out.read_text(encoding="utf-8")
+
+    assert "CatBoost" in text
+    assert "`balanced`" in text
+    assert "70 train" in text
+    assert "10 validation" in text
 
 
 def test_report_preserves_legacy_summary_dict_signature(tmp_path):

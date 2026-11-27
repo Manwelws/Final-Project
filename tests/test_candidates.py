@@ -112,3 +112,63 @@ def test_get_candidate_model_invalid_name():
     with pytest.raises(ValueError, match="Unsupported algorithm") as exc_info:
         get_candidate_model("unknown_model")
     assert "'knn'" in str(exc_info.value)
+
+
+def test_algorithm_specs_cli_choices_and_benchmark_all():
+    from sklearn.base import BaseEstimator
+    from final_project.models import (
+        BENCHMARK_ALL_ALGORITHMS,
+        CANDIDATE_ALGORITHM_SPECS,
+        CLI_ALGORITHM_CHOICES,
+        normalize_algorithm_name,
+        supports_class_weighting,
+    )
+
+    canonical_names = [spec.canonical_name for spec in CANDIDATE_ALGORITHM_SPECS]
+    assert BENCHMARK_ALL_ALGORITHMS == canonical_names
+    assert "knn" in BENCHMARK_ALL_ALGORITHMS
+
+    expected_cli_entries = {
+        "random_forest",
+        "lightgbm",
+        "xgboost",
+        "rf",
+        "lgb",
+        "xgb",
+        "logistic_regression",
+        "logistic",
+        "lr",
+        "bagged_logistic",
+        "bagged_lr",
+        "mlp",
+        "knn",
+        "kneighbors",
+        "voting_ensemble",
+        "stacking_ensemble",
+    }
+    assert expected_cli_entries.issubset(set(CLI_ALGORITHM_CHOICES))
+
+    for choice in CLI_ALGORITHM_CHOICES:
+        model = get_candidate_model(choice)
+        assert isinstance(model, BaseEstimator)
+
+    for algo in BENCHMARK_ALL_ALGORITHMS:
+        model = get_candidate_model(algo)
+        assert isinstance(model, BaseEstimator)
+        expected_weighted = algo != "knn"
+        assert supports_class_weighting(algo) is expected_weighted
+
+    assert supports_class_weighting("knn") is False
+    assert supports_class_weighting("kneighbors") is False
+    assert normalize_algorithm_name("rf") == "random_forest"
+    assert normalize_algorithm_name("lgbm") == "lightgbm"
+    assert normalize_algorithm_name("lgb") == "lightgbm"
+    assert normalize_algorithm_name("xgb") == "xgboost"
+    assert normalize_algorithm_name("lr") == "logistic_regression"
+    assert normalize_algorithm_name("logistic") == "logistic_regression"
+    assert normalize_algorithm_name("bagged_lr") == "bagged_logistic"
+    assert normalize_algorithm_name("neural_network") == "mlp"
+    assert normalize_algorithm_name("mlp_classifier") == "mlp"
+    assert normalize_algorithm_name("kneighbors") == "knn"
+    assert normalize_algorithm_name("voting") == "voting_ensemble"
+    assert normalize_algorithm_name("stacking") == "stacking_ensemble"

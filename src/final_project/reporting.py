@@ -1,5 +1,6 @@
 """Reporting and visualization adapters for evaluation reports and diagnostic plots."""
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import numpy as np
@@ -13,6 +14,26 @@ from sklearn.metrics import (
 from sklearn.calibration import calibration_curve
 
 from final_project.domain.cost import CostMatrix
+
+
+@dataclass(frozen=True)
+class EvaluationContext:
+    """Typed context metadata passed from evaluation into report rendering."""
+
+    algorithm: str = ""
+    balanced: bool | None = None
+    train_samples: int | None = None
+    val_samples: int | None = None
+
+
+_SHAP_FIGURES: tuple[tuple[str, str], ...] = (
+    ("SHAP Grouped Importance Summary", "shap_summary_grouped.png"),
+    ("SHAP Detailed Beeswarm Summary", "shap_summary_detailed.png"),
+    ("SHAP Dependence (Monthly Charges)", "shap_dependence_monthly_charges.png"),
+    ("SHAP Dependence (Tenure Months)", "shap_dependence_tenure.png"),
+    ("SHAP Local Waterfall (Churned Customer)", "shap_waterfall_churner.png"),
+    ("SHAP Local Waterfall (Retained / False Positive Customer)", "shap_waterfall_retained.png"),
+)
 
 
 def render_evaluation_plots(
@@ -152,6 +173,26 @@ def render_evaluation_plots(
     return plot_files
 
 
+def _extract_report_context(report: Any) -> EvaluationContext:
+    """Resolve an EvaluationContext from an EvaluationReport or duck-typed report object."""
+    raw_ctx = getattr(report, "context", None)
+    if isinstance(raw_ctx, EvaluationContext):
+        return raw_ctx
+    if raw_ctx is not None:
+        return EvaluationContext(
+            algorithm=getattr(raw_ctx, "algorithm", "") or "",
+            balanced=getattr(raw_ctx, "balanced", None),
+            train_samples=getattr(raw_ctx, "train_samples", None),
+            val_samples=getattr(raw_ctx, "val_samples", None),
+        )
+    return EvaluationContext(
+        algorithm=getattr(report, "algorithm", "") or "",
+        balanced=getattr(report, "balanced", None),
+        train_samples=getattr(report, "train_samples", None),
+        val_samples=getattr(report, "val_samples", None),
+    )
+
+
 def generate_evaluation_report(
     summary_data: dict[str, Any] | Any = None,
     opt_result: Any = None,
@@ -169,25 +210,33 @@ def generate_evaluation_report(
         if report_file is None and opt_result is not None:
             report_file = opt_result
 
-    if report is not None:
-        opt_result = report.optimization
-        summary_data = {
-            "test_samples": len(report.y_true),
-            "roc_auc": report.roc_auc,
-            "pr_auc": report.pr_auc,
-            "brier_score": report.brier_score,
-            "algorithm": getattr(report, "algorithm", ""),
-            "balanced": getattr(report, "balanced", None),
-            "train_samples": getattr(report, "train_samples", None),
-            "val_samples": getattr(report, "val_samples", None),
-        }
-
     if report_file is None:
         raise ValueError("report_file must be specified")
 
-    algorithm = summary_data.get("algorithm") or ""
+    if report is not None:
+        opt_result = report.optimization
+        context = _extract_report_context(report)
+        test_samples = len(report.y_true)
+        roc_auc = report.roc_auc
+        pr_auc = report.pr_auc
+        brier_score = report.brier_score
+    else:
+        if summary_data is None:
+            raise ValueError("summary_data or report must be provided")
+        context = EvaluationContext(
+            algorithm=summary_data.get("algorithm") or "",
+            balanced=summary_data.get("balanced"),
+            train_samples=summary_data.get("train_samples"),
+            val_samples=summary_data.get("val_samples"),
+        )
+        test_samples = summary_data["test_samples"]
+        roc_auc = summary_data.get("roc_auc")
+        pr_auc = summary_data.get("pr_auc")
+        brier_score = summary_data.get("brier_score")
+
+    algorithm = context.algorithm or ""
     algorithm_display = f"`{algorithm}`" if algorithm else "Not specified"
-    balanced = summary_data.get("balanced")
+    balanced = context.balanced
     if balanced is True:
         imbalance_strategy = "`balanced`"
     elif balanced is False:
@@ -195,9 +244,8 @@ def generate_evaluation_report(
     else:
         imbalance_strategy = "Not specified"
 
-    test_samples = summary_data["test_samples"]
-    train_samples = summary_data.get("train_samples")
-    val_samples = summary_data.get("val_samples")
+    train_samples = context.train_samples
+    val_samples = context.val_samples
     test_split_label = "20% stratified split"
     split_counts_line = ""
     if train_samples is not None and val_samples is not None:
@@ -238,15 +286,28 @@ def generate_evaluation_report(
 
     cost_matrix = getattr(report, "cost_matrix", None) or getattr(opt_result, "cost_matrix", None) or CostMatrix(cost_fn=200.0, cost_fp=20.0)
 
+    out_file = Path(report_file)
+    figures_dir = out_file.parent / "figures"
+    shap_lines = [
+        f"- **{label}**: `figures/{filename}`"
+        for label, filename in _SHAP_FIGURES
+        if (figures_dir / filename).exists()
+    ]
+    shap_section = (
+        "\n".join(shap_lines)
+        if shap_lines
+        else "- *SHAP diagnostic figures are generated into `figures/` by `churn explain`.*"
+    )
+
     content = f"""# Production Churn Model: Holdout Evaluation Report
 
 ## 1. Executive Summary
 - **Evaluated Model Algorithm**: {algorithm_display}
 - **Imbalance Strategy**: {imbalance_strategy}
 - **Holdout Test Set Size**: {test_samples:,} customers ({test_split_label}){split_counts_line}
-- **Holdout ROC-AUC**: `{_fmt_score(summary_data.get('roc_auc'))}`
-- **Holdout PR-AUC**: `{_fmt_score(summary_data.get('pr_auc'))}`
-- **Brier Calibration Score**: `{_fmt_score(summary_data.get('brier_score'))}` (lower is better, <0.15 indicates strong calibration)
+- **Holdout ROC-AUC**: `{_fmt_score(roc_auc)}`
+- **Holdout PR-AUC**: `{_fmt_score(pr_auc)}`
+- **Brier Calibration Score**: `{_fmt_score(brier_score)}` (lower is better, <0.15 indicates strong calibration)
 - **Business Cost Savings at Optimal Cutoff**: **${opt_result.cost_savings:,.2f} ({savings_pct:.1f}% reduction in expected financial loss)**
 
 ---
@@ -284,14 +345,8 @@ Assumed Matrix: $C_{{\\text{{FN}}}} = \\${cost_matrix.cost_fn:,.0f}$ (missed chu
 - **Calibration Diagram**: `figures/calibration_curve.png`
 - **Cost Curve**: `figures/cost_curve.png`
 - **Confusion Matrices**: `figures/confusion_matrix.png`
-- **SHAP Grouped Importance Summary**: `figures/shap_summary_grouped.png`
-- **SHAP Detailed Beeswarm Summary**: `figures/shap_summary_detailed.png`
-- **SHAP Dependence (Monthly Charges)**: `figures/shap_dependence_monthly_charges.png`
-- **SHAP Dependence (Tenure Months)**: `figures/shap_dependence_tenure.png`
-- **SHAP Local Waterfall (Churned Customer)**: `figures/shap_waterfall_churner.png`
-- **SHAP Local Waterfall (Retained / False Positive Customer)**: `figures/shap_waterfall_retained.png`
+{shap_section}
 """
-    out_file = Path(report_file)
     out_file.parent.mkdir(parents=True, exist_ok=True)
     with open(out_file, "w", encoding="utf-8") as f:
         f.write(content)

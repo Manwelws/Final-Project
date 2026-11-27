@@ -2,28 +2,25 @@ import json
 import pytest
 from pathlib import Path
 import joblib
-import pandas as pd
-from sklearn.datasets import make_classification
 from final_project.pipeline import run_training, PipelineRunSummary
 from final_project.registry import ModelBundle, ModelMetadata, compute_sha256
 
 
-def test_run_training_mock_creates_artifacts_and_metadata(tmp_path):
+def test_run_training_mock_creates_artifacts_and_metadata(tmp_path, classification_data_factory):
     data_dir = tmp_path / "data"
     output_dir = tmp_path / "models"
-    data_dir.mkdir()
 
     # Create mock dataset
-    X_mat, y_vec = make_classification(
+    X_df, _ = classification_data_factory(
+        data_dir,
         n_samples=60,
         n_features=5,
         n_informative=3,
         weights=[0.7, 0.3],
         random_state=42,
+        col_prefix="col_",
     )
-    feature_cols = [f"col_{i}" for i in range(5)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
+    feature_cols = list(X_df.columns)
 
     summary = run_training(
         data_dir=data_dir,
@@ -60,21 +57,19 @@ def test_package_level_run_training_export():
     assert callable(final_project.run_training)
 
 
-def test_run_training_persists_model_sha256_and_passes_bundle_load(tmp_path):
+def test_run_training_persists_model_sha256_and_passes_bundle_load(tmp_path, classification_data_factory):
     data_dir = tmp_path / "data"
     output_dir = tmp_path / "models"
-    data_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    classification_data_factory(
+        data_dir,
         n_samples=60,
         n_features=5,
         n_informative=3,
         weights=[0.7, 0.3],
         random_state=42,
+        col_prefix="col_",
     )
-    feature_cols = [f"col_{i}" for i in range(5)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     run_training(
         data_dir=data_dir,
@@ -105,22 +100,20 @@ def test_run_training_persists_model_sha256_and_passes_bundle_load(tmp_path):
     ],
 )
 def test_run_training_reconciles_train_samples_and_split_counts(
-    tmp_path, val_size, expected_train, expected_pre_refit, expected_val
+    tmp_path, classification_data_factory, val_size, expected_train, expected_pre_refit, expected_val
 ):
     data_dir = tmp_path / "data"
     output_dir = tmp_path / "models"
-    data_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    classification_data_factory(
+        data_dir,
         n_samples=60,
         n_features=5,
         n_informative=3,
         weights=[0.7, 0.3],
         random_state=42,
+        col_prefix="col_",
     )
-    feature_cols = [f"col_{i}" for i in range(5)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     summary = run_training(
         data_dir=data_dir,
@@ -140,21 +133,21 @@ def test_run_training_reconciles_train_samples_and_split_counts(
     assert meta.val_samples == summary.val_samples
 
 
-def test_run_training_knn_ignores_balanced_flag_in_summary_and_metadata(tmp_path):
+def test_run_training_knn_ignores_balanced_flag_in_summary_and_metadata(
+    tmp_path, classification_data_factory
+):
     data_dir = tmp_path / "data"
     output_dir = tmp_path / "models"
-    data_dir.mkdir()
 
-    X_mat, y_vec = make_classification(
+    classification_data_factory(
+        data_dir,
         n_samples=60,
         n_features=5,
         n_informative=3,
         weights=[0.7, 0.3],
         random_state=42,
+        col_prefix="col_",
     )
-    feature_cols = [f"col_{i}" for i in range(5)]
-    pd.DataFrame(X_mat, columns=feature_cols).to_csv(data_dir / "X_features.csv", index=False)
-    pd.DataFrame({"Churn Value": y_vec}).to_csv(data_dir / "y_target.csv", index=False)
 
     summary = run_training(
         data_dir=data_dir,
